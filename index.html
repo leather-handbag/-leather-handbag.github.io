@@ -23,10 +23,14 @@
         <a href="#roadmap" data-page="roadmap"><span class="nav-icon">⌁</span><span>任务导图</span></a>
         <a href="#blogs" data-page="blogs"><span class="nav-icon">✎</span><span>我的博客</span></a>
         <a href="#square" data-page="square"><span class="nav-icon">▦</span><span>文章广场</span></a>
+        <a href="#checkin" data-page="checkin"><span class="nav-icon">◉</span><span>每日签到</span></a>
+        <a href="#leaderboard" data-page="leaderboard"><span class="nav-icon">♜</span><span>排行榜</span></a>
+        <a href="#account" data-page="account"><span class="nav-icon">♙</span><span>个人中心</span></a>
+        <a href="#admin" data-page="admin" id="adminNav" class="hidden"><span class="nav-icon">⚙</span><span>管理后台</span></a>
       </nav>
       <div class="sidebar-foot">
         <div class="status-dot"></div>
-        <div><b>本地优先</b><small>数据留在你的浏览器中</small></div>
+        <div><b id="sidebarStatusTitle">访客只读</b><small id="sidebarStatusText">登录后可保存与发布</small></div>
       </div>
     </aside>
 
@@ -35,17 +39,19 @@
         <button class="icon-btn menu-btn" id="menuBtn" aria-label="展开菜单">☰</button>
         <div class="breadcrumb"><span>Leather</span><i>/</i><b id="pageTitle">首页</b></div>
         <div class="top-actions">
-          <span class="save-state" id="saveState"><i></i>本地存储</span>
-          <a class="icon-btn" href="https://github.com/" target="_blank" rel="noreferrer" aria-label="GitHub">↗</a>
+          <span class="save-state" id="saveState"><i></i>正在连接</span>
+          <a class="account-chip" id="topAccountBtn" href="#account"><span class="account-avatar" id="topAccountAvatar">?</span><span id="topAccountName">登录</span></a>
         </div>
       </header>
+      <div class="readonly-banner hidden" id="readonlyBanner"><span>访客模式</span>你可以阅读公开文章、个人主页和排行榜；登录后才能创建、修改、评论、签到或运行工具。<a href="#account">立即登录 →</a></div>
+      <div class="config-banner hidden" id="configBanner"><b>Supabase 尚未配置。</b>请复制 <code>.env.example</code> 为 <code>.env</code> 并填写项目 URL 与 anon key。</div>
 
       <section class="page active" id="page-home" data-title="首页">
         <div class="hero">
           <div class="hero-copy">
             <span class="eyebrow">FOR OI / ICPC LEARNERS</span>
             <h1>把散落的代码、验证<br>和计划，收回一个工作台。</h1>
-            <p>Leather 是一个无需登录、开箱即用的竞赛辅助站。模板加密保存在本地，对拍专注于发现边界错误，任务导图与博客帮你沉淀训练过程。</p>
+            <p>Leather 是面向竞赛训练的个人工作站。访客可以阅读公开内容，登录后可安全保存模板、计划与博客，并参与讨论和每日签到。</p>
             <div class="hero-actions">
               <a class="btn primary" href="#vault">建立我的模板库 <span>→</span></a>
               <a class="btn ghost" href="#stress">开始一次对拍</a>
@@ -167,7 +173,7 @@
                   <div class="meta-actions"><button class="icon-btn danger" id="deletePageBtn" title="删除模板">×</button><button class="btn primary small" id="savePageBtn">保存版本</button></div>
                 </div>
                 <div class="field-row"><select id="pageLanguage"><option>C++</option><option>Python</option><option>Java</option><option>JavaScript</option><option>Other</option></select><input id="pageTags" placeholder="标签，用逗号分隔"></div>
-                <div class="code-editor-wrap"><div class="line-numbers" id="lineNumbers">1</div><textarea id="codeEditor" spellcheck="false" placeholder="在这里粘贴或编写代码……"></textarea></div>
+                <div class="code-editor-wrap"><div class="line-numbers" id="lineNumbers">1</div><textarea id="codeEditor" maxlength="200000" spellcheck="false" placeholder="在这里粘贴或编写代码……"></textarea></div>
                 <div class="version-area">
                   <div class="version-head"><div><b>版本记录</b><span id="versionCount">0 个快照</span></div><button class="text-btn" id="toggleDiffBtn">展开差异</button></div>
                   <div id="versionList" class="version-list"></div>
@@ -194,15 +200,15 @@
         <div class="stress-grid">
           <article class="code-card">
             <header><div><span class="code-badge green">01</span><div><b>待测正解</b><small>solution</small></div></div><button class="text-btn reset-code" data-target="solutionCode">恢复示例</button></header>
-            <textarea id="solutionCode" spellcheck="false"></textarea>
+            <textarea id="solutionCode" maxlength="200000" spellcheck="false"></textarea>
           </article>
           <article class="code-card">
             <header><div><span class="code-badge orange">02</span><div><b>暴力解法</b><small>brute force</small></div></div><button class="text-btn reset-code" data-target="bruteCode">恢复示例</button></header>
-            <textarea id="bruteCode" spellcheck="false"></textarea>
+            <textarea id="bruteCode" maxlength="200000" spellcheck="false"></textarea>
           </article>
           <article class="code-card generator-card">
             <header><div><span class="code-badge blue">03</span><div><b>数据生成器</b><small>generator</small></div></div><div class="template-menu"><button class="text-btn" id="generatorMenuBtn">插入模板⌄</button><div class="dropdown hidden" id="generatorDropdown"><button data-template="array">随机数组</button><button data-template="number">随机整数</button><button data-template="graph">随机连通图</button></div></div></header>
-            <textarea id="generatorCode" spellcheck="false"></textarea>
+            <textarea id="generatorCode" maxlength="200000" spellcheck="false"></textarea>
           </article>
         </div>
         <section class="result-console" id="stressResult">
@@ -226,7 +232,7 @@
           <div><span class="eyebrow">MY WRITING DESK</span><h1>把解题过程，写成自己的知识库。</h1><p>使用 Markdown 写作，并用 <code>$...$</code> 或 <code>$$...$$</code> 插入 LaTeX 公式。</p></div>
           <button class="btn primary" id="newBlogBtn">＋ 新建博客</button>
         </div>
-        <div class="local-public-note"><span>i</span><p><b>当前是纯前端本地版：</b>私有文章只会出现在“我的博客”；公开文章会进入本浏览器的文章广场。跨设备、跨用户发布需要接入后端，具体见项目报告。</p></div>
+        <div class="local-public-note"><span>i</span><p><b>云端账号版：</b>私有文章仅作者和管理员可读；公开文章会进入所有访客可见的文章广场。发布和修改都由数据库 RLS 校验作者身份。</p></div>
         <div class="blog-manager">
           <aside class="blog-list-pane">
             <div class="blog-list-tools">
@@ -243,7 +249,7 @@
                 <button class="icon-btn danger" id="deleteBlogBtn" type="button" title="删除文章">×</button>
               </div>
               <div class="blog-meta-fields">
-                <label>署名<input id="blogAuthor" maxlength="30" placeholder="例如：Leather 用户"></label>
+                <label>署名<input id="blogAuthor" maxlength="30" placeholder="使用账号名称" readonly></label>
                 <label>可见性<select id="blogVisibility"><option value="private">私有 · 仅自己可见</option><option value="public">公开 · 显示在文章广场</option></select></label>
                 <label class="wide-field">标签<input id="blogTags" maxlength="100" placeholder="算法, 图论, 题解（用逗号分隔）"></label>
                 <label class="wide-field">摘要<textarea id="blogSummary" maxlength="240" placeholder="用一两句话介绍这篇文章"></textarea></label>
@@ -273,7 +279,7 @@
           <div class="station-comment-intro"><span class="eyebrow">STATION FEEDBACK</span><h2>给整个工作站留言</h2><p>发现 bug、功能异常或有改进建议，可以在这里反馈。请勿留下密码、密钥等隐私信息。</p></div>
           <div class="station-comment-main">
             <form id="stationCommentForm" class="comment-form">
-              <div class="comment-fields"><input id="stationCommentAuthor" maxlength="30" placeholder="你的称呼"><select id="stationCommentType"><option value="bug">Bug 反馈</option><option value="suggestion">功能建议</option><option value="other">其他留言</option></select></div>
+              <div class="comment-fields"><input id="stationCommentAuthor" maxlength="30" placeholder="登录后自动使用账号名称" readonly><select id="stationCommentType"><option value="bug">Bug 反馈</option><option value="suggestion">功能建议</option><option value="other">其他留言</option></select></div>
               <textarea id="stationCommentContent" maxlength="1000" placeholder="请尽量说明复现步骤、浏览器环境或具体建议……" required></textarea>
               <div><small>提交前会检查变体、谐音拆分与特殊符号绕过。</small><button class="btn primary small" type="submit">提交留言</button></div>
             </form>
@@ -287,7 +293,76 @@
         <div id="articleView"></div>
       </section>
 
-      <footer><span>Leather · Built for competitive programmers</span><span>所有数据默认仅存于此浏览器</span></footer>
+      <section class="page" id="page-account" data-title="个人中心">
+        <div id="authGuestPanel" class="account-gate">
+          <div class="account-gate-copy"><span class="eyebrow">LEATHER ACCOUNT</span><h1>登录后，让训练记录真正属于你。</h1><p>邮箱密码由 Supabase Auth 安全管理，也可以使用 GitHub 授权。访客仍可阅读公开文章和排行榜。</p><ul><li>模板、计划和私有文章按账号隔离</li><li>作者权限由数据库 RLS 强制校验</li><li>密码不会写入 Leather 数据表</li></ul></div>
+          <div class="auth-card">
+            <div class="auth-tabs"><button class="active" type="button" data-auth-tab="login">登录</button><button type="button" data-auth-tab="signup">注册</button></div>
+            <form id="emailAuthForm">
+              <label>邮箱<input id="authEmail" type="email" maxlength="254" autocomplete="email" required placeholder="you@example.com"></label>
+              <label>密码<input id="authPassword" type="password" minlength="8" maxlength="72" autocomplete="current-password" required placeholder="至少 8 位"></label>
+              <label id="authConfirmLabel" class="hidden">确认密码<input id="authPasswordConfirm" type="password" minlength="8" maxlength="72" autocomplete="new-password" placeholder="再次输入密码"></label>
+              <p class="form-error" id="authError" role="alert"></p>
+              <button class="btn primary wide" id="emailAuthSubmit" type="submit">登录</button>
+            </form>
+            <button class="btn github-auth wide" id="githubAuthBtn" type="button"><span>GitHub</span> 使用 GitHub 授权</button>
+            <button class="text-btn auth-reset" id="resetPasswordBtn" type="button">忘记密码？发送重置邮件</button>
+            <small>注册即表示同意遵守内容规范。违规内容会由服务端自动删除并可能触发封禁。</small>
+          </div>
+        </div>
+        <div id="accountProfilePanel" class="hidden">
+          <div class="workspace-head"><div><span class="eyebrow">ACCOUNT PROFILE</span><h1>个人资料与安全</h1><p>公开资料会显示在个人主页和排行榜。</p></div><button class="btn ghost" id="signOutBtn">退出登录</button></div>
+          <div class="account-layout">
+            <form id="profileForm" class="settings-card">
+              <h2>公开资料</h2>
+              <div class="avatar-setting"><span class="profile-avatar large" id="profileAvatarPreview">L</span><label class="btn ghost small">提交新头像<input id="profileAvatarFile" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden></label><small id="avatarRequestStatus">最大 2 MB，提交后等待管理员审核</small></div>
+              <label>名字<input id="profileDisplayName" maxlength="30" required></label>
+              <label>唯一 ID<div class="handle-input"><span>@</span><input id="profileHandle" maxlength="30" pattern="[a-z0-9][a-z0-9_-]{2,29}" required></div></label>
+              <label>个人简介<textarea id="profileBio" maxlength="300" placeholder="介绍你的训练方向、目标或擅长领域"></textarea></label>
+              <p class="form-error" id="profileError"></p>
+              <button class="btn primary" type="submit">保存资料</button>
+            </form>
+            <div class="account-side-cards">
+              <section class="settings-card profile-level-card"><h2>当前等级</h2><div id="accountLevelSummary"></div><a class="btn ghost small" id="myPublicProfileBtn" href="#profile">查看公开主页</a></section>
+              <form id="passwordForm" class="settings-card"><h2>修改密码</h2><label>新密码<input id="newPassword" type="password" minlength="8" maxlength="72" autocomplete="new-password" required></label><label>确认新密码<input id="newPasswordConfirm" type="password" minlength="8" maxlength="72" autocomplete="new-password" required></label><p class="form-error" id="passwordError"></p><button class="btn dark" type="submit">更新密码</button></form>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="page" id="page-checkin" data-title="每日签到">
+        <div class="workspace-head checkin-head"><div><span class="eyebrow">DAILY RNG CHECK-IN</span><h1>今天，会抽到怎样的数字？</h1><p>每天仅可签到一次。安全随机生成六位数字，并根据重复、回文、顺子等形态评级。</p></div><a class="btn ghost" href="#leaderboard">查看排行榜</a></div>
+        <div class="checkin-layout">
+          <section class="rng-card"><div class="rng-date" id="checkinDate">今日签到</div><div class="rng-number" id="checkinNumber">------</div><div class="rarity-badge common" id="checkinRarity">等待抽取</div><p id="checkinMessage">点击按钮生成今天唯一的随机数字。</p><button class="btn primary wide" id="dailyCheckinBtn">生成数字并签到</button></section>
+          <section class="rarity-rules"><span class="eyebrow">RARITY RULES</span><h2>稀有度规则</h2><div class="rarity-rule-list"><article class="legendary"><b>传说</b><span>六位相同、完整正序或倒序</span></article><article class="epic"><b>史诗</b><span>回文、前三位重复、四位以上相同</span></article><article class="rare"><b>稀有</b><span>三位相同、三组对子、末尾 000</span></article><article class="uncommon"><b>少见</b><span>对子、三位顺子、末尾 00</span></article><article class="common"><b>普通</b><span>没有命中特殊数字形态</span></article></div><p>等级只展示随机数字的稀有程度，不额外增加积分，避免排行榜由运气决定。</p></section>
+        </div>
+        <section class="checkin-history"><div class="comment-title"><div><span class="eyebrow">HISTORY</span><h2>我的签到记录</h2></div><span id="checkinHistoryCount">0 次</span></div><div id="checkinHistoryList" class="checkin-history-list"></div></section>
+      </section>
+
+      <section class="page" id="page-leaderboard" data-title="排行榜">
+        <div class="workspace-head"><div><span class="eyebrow">LEATHER RANKING</span><h1>坚持签到，也认识同行的人。</h1><p>签到日 +5 分；已经结束但未签到的日期 -1 分。管理员和站长名称固定显示为紫色。</p></div></div>
+        <div class="leaderboard-toolbar"><div class="search-box">⌕<input id="userSearch" maxlength="30" placeholder="搜索名字或 @ID"></div><span>分数实时计算</span></div>
+        <div id="leaderboardList" class="leaderboard-list"></div>
+      </section>
+
+      <section class="page" id="page-profile" data-title="个人主页">
+        <button class="article-back text-btn" id="profileBackBtn">← 返回排行榜</button>
+        <div id="publicProfileView"></div>
+      </section>
+
+      <section class="page" id="page-admin" data-title="管理后台">
+        <div class="workspace-head admin-head"><div><span class="eyebrow">MODERATION CONSOLE</span><h1>管理与审计</h1><p>管理员操作受数据库权限约束；管理员不能操作站长，只有站长可以授权、解封或解除管理员。</p></div><span class="staff-badge" id="adminRoleBadge">管理员</span></div>
+        <div id="adminDenied" class="private-article-note hidden">你没有访问管理后台的权限。</div>
+        <div id="adminConsole" class="admin-console hidden">
+          <section class="admin-card"><div class="admin-card-head"><div><h2>用户管理</h2><p>搜索正常账号、封禁以及站长专属的管理员授权。</p></div><div class="search-box">⌕<input id="adminUserSearch" placeholder="搜索名字或 ID"></div></div><div id="adminUserList" class="admin-list"></div></section>
+          <section class="admin-card"><div class="admin-card-head"><div><h2>头像审核</h2><p>新头像通过审核后才会在公开资料中显示。</p></div><span class="review-count" id="avatarReviewCount">0 项</span></div><div id="avatarRequestList" class="admin-list"></div></section>
+          <section class="admin-card"><div class="admin-card-head"><div><h2>全部内容</h2><p>管理员可查看并删除普通用户的博客、评论、计划与模板。</p></div><select id="adminContentType"><option value="posts">博客</option><option value="post_comments">文章评论</option><option value="station_comments">工作站留言</option><option value="plans">计划</option><option value="templates">模板</option></select></div><div id="adminContentList" class="admin-list"></div></section>
+          <section class="admin-card wide hidden" id="ownerBanCard"><div class="admin-card-head"><div><h2>封禁列表</h2><p>仅站长可见，保存封禁时间、原因并提供解封操作。</p></div><span class="review-count" id="ownerBanCount">0 人</span></div><div id="ownerBanList" class="admin-list"></div></section>
+          <section class="admin-card wide"><div class="admin-card-head"><div><h2>审核记录</h2><p>显示自动删除封禁和人工管理操作。</p></div><button class="btn ghost small" id="refreshAdminBtn">刷新</button></div><div id="moderationEventList" class="admin-list"></div></section>
+        </div>
+      </section>
+
+      <footer><span>Leather · Built for competitive programmers</span><span>账号数据由 Supabase RLS 隔离保护</span></footer>
     </main>
   </div>
 
@@ -301,6 +376,6 @@
   <div class="toast-stack" id="toastStack" aria-live="polite"></div>
 
   <script src="https://cdn.jsdelivr.net/npm/katex@0.16.22/dist/katex.min.js" integrity="sha384-cMkvdD8LoxVzGF/RPUKAcvmm49FQ0oxwDF3BGKtDXcEc+T1b2N+teh/OJfpU0jr6" crossorigin="anonymous" defer></script>
-  <script src="app.js" defer></script>
+  <script type="module" src="app.js"></script>
 </body>
 </html>

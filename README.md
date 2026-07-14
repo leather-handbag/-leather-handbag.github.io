@@ -1,62 +1,102 @@
 # Leather Support Station
 
-这是一款轻量的辅助工作站。用于存放代码模板和剪贴板，数据对拍和任务规划，主要面向程序工作者。
+Leather 是面向信息学竞赛训练的账号型工作站。访客可以阅读公开文章、个人主页和排行榜；登录后可以使用模板库、代码对拍、任务导图、博客、评论和每日签到。
 
-本站仍在持续完善，欢迎通过文章广场底部的工作站留言或 GitHub issues 给出建议。
+## 功能
 
-## 目前功能
+- Supabase 邮箱密码与 GitHub OAuth 登录，支持头像、名字、唯一 ID、简介和修改密码。
+- 模板分区、标签、版本快照和 Diff；模板按账号存储，不再要求单独的模板密码。
+- JavaScript 在线对拍与 C++14 PowerShell 对拍脚本。
+- 云端分层任务导图。
+- 私有/公开博客、Markdown、KaTeX、文章评论和工作站留言。
+- 每日安全随机六位数字、稀有度评级、签到等级分、排行榜和用户搜索。
+- 站长/管理员后台、RLS 权限、自动内容审核、删除封禁和审计记录。
 
-- **加密模板库**：用关键字定位代码库，密码解锁；支持分区、标签页、语言与标签筛选。
-- **版本快照与 Diff**：每次主动保存都会记录完整快照，可逐行查看新增、删除与未变内容，也能把旧版本载入编辑器。
-- **代码对拍**：JavaScript 代码可在隔离的 Web Worker 中一键运行，自动保留第一组差异、输入、双方输出和随机种子。对于 C++，可把 C++ 程序打包进 PowerShell 对拍脚本，在装有 `g++` 的 Windows 电脑上编译运行。
-- **随机数据模板**：内置随机数组、随机整数和随机连通图生成器，含 JavaScript 与 C++14 版本。
-- **分层任务导图**：上层优先级高于下层；每层可放多个任务，支持跨层拖动、层级排序和完成率统计。
-- **博客写作**：文章可以设为私有或公开，支持常用 Markdown、代码块、表格以及行内/块级 LaTeX 公式。
-- **文章广场与评论**：公开博客会进入本浏览器的文章广场；支持文章评论和面向整个工作站的 Bug/建议留言。
-- **前端内容检查**：博客与评论发布前会检查敏感词变体、特殊符号拆分、垃圾链接、重复内容和短时间刷屏。
+## 本地启动
 
-浏览器数据不会自动跨设备同步，清理站点数据会丢失内容，因此应定期备份重要数据；密码没有找回机制。当前“公开文章”和评论仍是本浏览器内的数据，真正的多人发布需要后端，详见 [BLOG_FEATURE_REPORT.md](BLOG_FEATURE_REPORT.md)。
-
-## 本地运行
-
-直接打开 `index.html` 可以浏览多数页面。模板加密依赖 Web Crypto，建议通过本地 HTTP 服务运行：
+要求 Node.js 22.12 或更高版本。
 
 ```bash
-python -m http.server 8080
+npm install
 ```
 
-然后访问 `http://localhost:8080`。
+复制 `.env.example` 为 `.env`，填写 Supabase Dashboard → Project Settings → Data API 中的项目参数：
 
+```env
+VITE_SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
+VITE_SUPABASE_ANON_KEY=YOUR_PUBLISHABLE_OR_ANON_KEY
+```
 
-## 对拍
+只允许在前端使用 publishable/anon key。绝对不能把 `service_role` key 写进 `.env`、源码或 GitHub Secrets 的前端构建变量。
 
-在线 JavaScript 模式：
+在 Supabase SQL Editor 执行 [202607130001_leather.sql](supabase/migrations/202607130001_leather.sql)，然后启动：
 
-- 正解和暴力各自定义 `solve(input)`，返回字符串或可转为字符串的值。
-- 生成器定义 `generate(seed)`，返回一组完整输入。
-- 生成器可调用内置的 `rnd(l, r)`，它返回闭区间随机整数。
-- 比较时仅忽略输出末尾空白，内部空格与换行仍会严格比较。
-- 单次任务最长运行 20 秒，失控代码会随 Worker 一同终止。
+```bash
+npm run dev
+```
 
-C++14 本地模式：
+生产构建：
 
-- 三个编辑器中都放完整且能独立编译的程序。
-- 生成器从 `argv[1]` 读取随机种子并向标准输出写入数据。
-- 下载脚本后需在 Windows PowerShell 中运行；本机应安装 `g++` 并加入 `PATH`。
+```bash
+npm run build
+npm run preview
+```
 
-## 安全说明
+## 认证配置
 
-- 密码不会写入本地存储，只在当前页面会话的内存中用于派生密钥。
-- 关键字经 SHA-256 后用于生成本地存储键；密文备份中会包含代码库名称和关键字，代码内容仍为密文。
-- 本项目没有云端帐号与恢复服务，请牢记密码。
-- 在线对拍代码在 Worker 中运行，但仍不应粘贴来源不明或包含隐私的数据。
-- 博客 Markdown 不执行原始 HTML，外部链接只允许 HTTP/HTTPS；LaTeX 使用 KaTeX 不可信模式。
-- 前端敏感词检查只能提供即时拦截，不能替代多人线上环境中的服务端审核。
+1. Supabase Authentication → URL Configuration：Site URL 填线上 GitHub Pages 地址。
+2. Redirect URLs 同时加入线上地址和本地地址，例如 `http://localhost:5173/**`。
+3. 邮箱登录建议开启 Confirm email，并配置正式 SMTP。
+4. GitHub 登录需要在 GitHub 创建 OAuth App，再把 Client ID/Secret 填入 Supabase Authentication → Providers → GitHub。
+5. 建议在 Supabase 开启 CAPTCHA、泄漏密码检查和合理的 Auth/API Rate Limits。
 
-## 浏览器支持
+## 绑定站长
 
-建议使用较新的 Chrome、Edge 或 Firefox。模板库要求浏览器支持 Web Crypto、AES-GCM 和 PBKDF2。
+`leather-handbag` 是保留 ID，但名字本身不能证明身份。首次注册并登录后，在 Supabase Authentication → Users 复制你自己的 UUID，以项目所有者身份执行：
 
-## 警告
+```sql
+update public.profiles
+set role = 'owner',
+    handle = 'leather-handbag',
+    display_name = 'leather-handbag',
+    updated_at = now()
+where id = 'YOUR_AUTH_UUID';
+```
 
-**请勿存储含敏感信息的内容。**
+必须检查只更新了一行，并确认 UUID 属于你的账号。普通用户不能抢注此 ID，也不能自行修改角色。
+
+## GitHub Pages
+
+仓库已包含 [.github/workflows/deploy.yml](.github/workflows/deploy.yml)。在 GitHub 仓库 Settings → Secrets and variables → Actions 新建：
+
+- `VITE_SUPABASE_URL`
+- `VITE_SUPABASE_ANON_KEY`
+
+然后在 Settings → Pages 将 Source 设置为 GitHub Actions。工作流会执行 `npm ci`、注入环境变量、构建 `dist` 并部署。
+
+`.env`、`.env.*`、`node_modules` 和 `dist` 已加入 `.gitignore`，仅 `.env.example` 可以提交。
+
+## 权限规则
+
+- 未登录用户只能读取公开文章、安全公开资料和排行榜。
+- 作者只能新增、修改或删除自己的博客、评论、模板和计划。
+- 管理员可以查看所有博客、模板和计划，可以删除普通用户内容、封禁普通用户，但不能解封或操作站长/其他管理员。
+- 站长可以封禁、解封、授权管理员和解除管理员；任何人都不能通过前端修改自己的角色或封禁状态。
+- 名字颜色：负分灰、0–4 蓝、5–9 绿、10–29 橙、30 以上红；管理员和站长固定紫色。
+- 签到日 +5 分；已经结束且漏签的日期 -1 分。分数由签到记录实时计算，不依赖定时任务。
+
+## 内容安全
+
+- 浏览器先做 Unicode、零宽字符、符号拆分和部分形近字符检查。
+- 数据库触发器再次审核博客、评论、留言、资料、模板、快照和计划；命中后删除/清空内容、记录事件并停止该账号写入。
+- 对拍代码在运行前调用服务端审核 RPC；命中后删除本地对拍内容并封禁写入权限。
+- RLS 和服务端触发器才是最终安全边界，不能信任前端检查。
+- Markdown 原始 HTML 会被转义，链接仅允许 HTTP/HTTPS；KaTeX 使用 `trust: false` 和 SRI 完整性校验。
+
+完整的远端配置步骤、未完成项和风险见 [SUPABASE_SETUP_REPORT.md](SUPABASE_SETUP_REPORT.md)。
+
+## 对拍约定
+
+JavaScript 模式中，正解和暴力定义 `solve(input)`，生成器定义 `generate(seed)`；生成器可以调用 `rnd(l, r)`。代码在 Web Worker 中运行，单次任务最长 20 秒。
+
+C++14 模式会下载 PowerShell 脚本，本机需要安装 `g++` 并加入 `PATH`。

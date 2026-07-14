@@ -1,3 +1,5 @@
+import * as api from "./cloud.js";
+
 "use strict";
 
 const $ = (s, p = document) => p.querySelector(s);
@@ -37,18 +39,28 @@ $("#modalConfirm").onclick = () => closeModal(true);
 $("#modalBackdrop").addEventListener("click", e => { if (e.target === e.currentTarget) closeModal(false); });
 
 // Navigation
-const titles = { home: "首页", vault: "模板库", stress: "代码对拍", roadmap: "任务导图", blogs: "我的博客", square: "文章广场", article: "阅读文章" };
+const titles = { home: "首页", vault: "模板库", stress: "代码对拍", roadmap: "任务导图", blogs: "我的博客", square: "文章广场", article: "阅读文章", account: "个人中心", checkin: "每日签到", leaderboard: "排行榜", profile: "个人主页", admin: "管理后台" };
+const protectedPages = new Set(["vault", "stress", "roadmap", "blogs", "checkin", "admin"]);
 function route() {
   const path = location.hash.slice(1) || "home";
   const [name, id = ""] = path.split("/");
-  const page = titles[name] ? name : "home";
+  let page = titles[name] ? name : "home";
+  if (api.cloud.authReady && protectedPages.has(page) && !hasWriteAccess()) {
+    toast("请先登录后再使用此功能", "error"); page = "account";
+  }
+  if (page === "admin" && !["admin", "owner"].includes(api.cloud.profile?.role)) page = "account";
   $$(".page").forEach(el => el.classList.toggle("active", el.id === `page-${page}`));
-  $$(".main-nav a").forEach(el => el.classList.toggle("active", el.dataset.page === page || (page === "article" && el.dataset.page === "square")));
+  $$(".main-nav a").forEach(el => el.classList.toggle("active", el.dataset.page === page || (page === "article" && el.dataset.page === "square") || (page === "profile" && el.dataset.page === "leaderboard")));
   $("#pageTitle").textContent = titles[page];
   $("#sidebar").classList.remove("open");
   if (page === "blogs") renderMyBlogs();
   if (page === "square") { renderSquare(); renderStationComments(); }
   if (page === "article") renderArticle(decodeURIComponent(id));
+  if (page === "account") renderAccount();
+  if (page === "checkin") renderCheckinPage();
+  if (page === "leaderboard") renderLeaderboard();
+  if (page === "profile") renderPublicProfile(decodeURIComponent(id));
+  if (page === "admin") renderAdmin();
   window.scrollTo({ top: 0, behavior: "instant" });
 }
 window.addEventListener("hashchange", route);
@@ -230,11 +242,16 @@ $("#savePageBtn").onclick = async () => {
   const snap = { id: uid(), time: Date.now(), title, lang: $("#pageLanguage").value, tags, code: $("#codeEditor").value };
   const last = p.snapshots[p.snapshots.length - 1];
   if (last && last.title === snap.title && last.lang === snap.lang && last.code === snap.code && JSON.stringify(last.tags) === JSON.stringify(snap.tags)) { toast("内容没有变化，无需创建快照"); return; }
+  if (api.cloud.configured) {
+    try {
+      const saved = await api.saveTemplate(p.id, snap); snap.id = saved.id; snap.time = Date.parse(saved.created_at);
+    } catch (error) { toast(error.message, "error"); await handlePossibleBan(); return; }
+  }
   Object.assign(p, { title: snap.title, lang: snap.lang, tags: snap.tags, code: snap.code, updated: snap.time });
   p.snapshots.push(snap);
   if (p.snapshots.length > 60) p.snapshots.splice(0, p.snapshots.length - 60);
   vault.versionId = snap.id;
-  await saveVault("新版本已加密保存");
+  if (!api.cloud.configured) await saveVault("新版本已加密保存"); else toast("新版本已保存到账号");
   renderPages(); renderVersions();
 };
 document.addEventListener("keydown", e => {
@@ -245,9 +262,13 @@ async function addSection() {
   const body = await openModal({ title: "添加分区", html: '<label>分区名称<input id="newSectionName" maxlength="30" placeholder="例如：图论"></label><label>标识颜色<select id="newSectionColor">' + colors.map((c, i) => `<option value="${c}">颜色 ${i + 1}</option>`).join("") + '</select></label>', confirm: "添加" });
   if (!body) return;
   const name = $("#newSectionName", body).value.trim(); if (!name) { toast("分区名称不能为空", "error"); return; }
-  const sec = { id: uid(), name, color: $("#newSectionColor", body).value, pages: [] };
+  let sec = { id: uid(), name, color: $("#newSectionColor", body).value, pages: [] };
+  if (api.cloud.configured) {
+    try { const saved = await api.createSection({ name, color: sec.color, position: vault.data.sections.length }); sec = { ...sec, id: saved.id }; }
+    catch (error) { toast(error.message, "error"); await handlePossibleBan(); return; }
+  }
   vault.data.sections.push(sec); vault.sid = sec.id; vault.pid = "";
-  await saveVault("分区已添加"); renderVault();
+  if (!api.cloud.configured) await saveVault("分区已添加"); else toast("分区已添加"); renderVault();
 }
 $("#addSectionBtn").onclick = addSection;
 async function editSection(id) {
@@ -256,24 +277,34 @@ async function editSection(id) {
   if (!body) return;
   if ($("#deleteSectionCheck", body).checked) {
     if (!confirm(`确定永久删除“${s.name}”及其中 ${s.pages.length} 个模板吗？`)) return;
+    if (api.cloud.configured) { try { await api.deleteSection(id); } catch (error) { toast(error.message, "error"); await handlePossibleBan(); return; } }
     vault.data.sections = vault.data.sections.filter(v => v.id !== id);
     vault.sid = vault.data.sections[0]?.id || ""; vault.pid = currentSection()?.pages[0]?.id || "";
-  } else { s.name = $("#editSectionName", body).value.trim() || s.name; s.color = $("#editSectionColor", body).value; }
-  await saveVault("分区已更新"); renderVault();
+  } else {
+    const value = { name: $("#editSectionName", body).value.trim() || s.name, color: $("#editSectionColor", body).value };
+    if (api.cloud.configured) { try { await api.updateSection(id, value); } catch (error) { toast(error.message, "error"); await handlePossibleBan(); return; } }
+    Object.assign(s, value);
+  }
+  if (!api.cloud.configured) await saveVault("分区已更新"); else toast("分区已更新"); renderVault();
 }
 $("#addPageBtn").onclick = async () => {
   const sec = currentSection(); if (!sec) { toast("请先创建分区", "error"); return; }
   const body = await openModal({ title: "新建代码模板", html: '<label>模板名称<input id="newPageName" maxlength="80" placeholder="例如：Dinic 最大流"></label><label>语言<select id="newPageLang"><option>C++</option><option>Python</option><option>Java</option><option>JavaScript</option><option>Other</option></select></label>', confirm: "创建" });
   if (!body) return;
   const title = $("#newPageName", body).value.trim() || "未命名模板", lang = $("#newPageLang", body).value, t = Date.now();
-  const p = { id: uid(), title, lang, tags: [], code: "", updated: t, snapshots: [] };
+  let p = { id: uid(), title, lang, tags: [], code: "", updated: t, snapshots: [] };
+  if (api.cloud.configured) {
+    try { const saved = await api.createTemplate({ section_id: sec.id, title, lang, tags: [], code: "" }); p = { ...p, id: saved.id, updated: Date.parse(saved.updated_at) }; }
+    catch (error) { toast(error.message, "error"); await handlePossibleBan(); return; }
+  }
   sec.pages.push(p); vault.pid = p.id;
-  await saveVault("模板已创建"); renderVault();
+  if (!api.cloud.configured) await saveVault("模板已创建"); else toast("模板已创建"); renderVault();
 };
 $("#deletePageBtn").onclick = async () => {
   const p = currentPage(), sec = currentSection(); if (!p || !confirm(`确定永久删除“${p.title}”吗？`)) return;
+  if (api.cloud.configured) { try { await api.deleteTemplate(p.id); } catch (error) { toast(error.message, "error"); await handlePossibleBan(); return; } }
   sec.pages = sec.pages.filter(v => v.id !== p.id); vault.pid = sec.pages[0]?.id || "";
-  await saveVault("模板已删除"); renderVault();
+  if (!api.cloud.configured) await saveVault("模板已删除"); else toast("模板已删除"); renderVault();
 };
 $("#lockVaultBtn").onclick = () => {
   if (!confirmDiscard()) return;
@@ -400,7 +431,15 @@ function stressStatus(kind, title, summary, progress) {
   $("#stressProgress").style.width = `${progress}%`;
   const dot = $(".console-head i"); dot.className = kind;
 }
-$("#runStressBtn").onclick = () => stressLang === "js" ? runOnlineStress() : downloadCppStress();
+$("#runStressBtn").onclick = async () => {
+  const content = [$("#solutionCode").value, $("#bruteCode").value, $("#generatorCode").value].join("\n---LEATHER-SPLIT---\n");
+  const bad = findSensitive({ 对拍代码: content }); if (bad && !api.cloud.configured) { toast("代码包含不适宜内容，已停止运行", "error"); return; }
+  if (api.cloud.configured) {
+    try { if (!await api.enforceTextPolicy(content, "stress_test")) { localStorage.removeItem("leather-stress-v1"); loadStress(stressLang); await handlePossibleBan(); toast("服务端审核拒绝运行，内容已删除且账号已封禁", "error"); return; } }
+    catch (error) { toast(error.message, "error"); return; }
+  }
+  stressLang === "js" ? runOnlineStress() : downloadCppStress();
+};
 $("#stopStressBtn").onclick = () => stopStress("已手动停止");
 function stopStress(reason = "运行已停止") {
   if (stressWorker) stressWorker.terminate(); stressWorker = null; clearTimeout(stressTimer);
@@ -467,9 +506,17 @@ loadStress("js");
 
 // Layered training roadmap
 const roadmap = { levels: [], dragged: null };
+let planSyncTimer = 0;
 const sampleRoadmap = () => [{ id: uid(), name: "本周必做", note: "最高优先级", color: "#bd623f", tasks: [{ id: uid(), title: "补完网络流专题", desc: "复习 Dinic，并完成 3 道建图题", due: "周三", done: false }, { id: uid(), title: "校内模拟赛", desc: "赛后当天完成复盘", due: "周六", done: false }] }, { id: uid(), name: "持续推进", note: "重要但不紧急", color: "#2f6b53", tasks: [{ id: uid(), title: "整理字符串模板", desc: "KMP、Z 函数、AC 自动机", due: "本周", done: false }, { id: uid(), title: "错题二刷", desc: "重新独立完成最近 5 道错题", due: "周日", done: true }] }, { id: uid(), name: "空闲拓展", note: "有余力再做", color: "#42677b", tasks: [{ id: uid(), title: "阅读 IOI 论文", desc: "记录可迁移的思路", due: "长期", done: false }] }];
-function loadRoadmap() { try { roadmap.levels = JSON.parse(localStorage.getItem("leather-roadmap-v1")) || sampleRoadmap(); } catch { roadmap.levels = sampleRoadmap(); } renderRoadmap(); }
-function saveRoadmap(message = "") { localStorage.setItem("leather-roadmap-v1", JSON.stringify(roadmap.levels)); if (message) toast(message); }
+function loadRoadmap() { if (api.cloud.configured) roadmap.levels = []; else { try { roadmap.levels = JSON.parse(localStorage.getItem("leather-roadmap-v1")) || sampleRoadmap(); } catch { roadmap.levels = sampleRoadmap(); } } renderRoadmap(); }
+function saveRoadmap(message = "") {
+  if (!api.cloud.configured) localStorage.setItem("leather-roadmap-v1", JSON.stringify(roadmap.levels));
+  else if (api.cloud.user) {
+    clearTimeout(planSyncTimer);
+    planSyncTimer = setTimeout(async () => { try { await api.savePlan(roadmap.levels); if (message) toast(message); } catch (error) { toast(error.message, "error"); await handlePossibleBan(); if (api.cloud.profile?.banned_at) { roadmap.levels = []; renderRoadmap(); } } }, 350);
+  }
+  if (message && !api.cloud.configured) toast(message);
+}
 function renderRoadmap() {
   const board = $("#roadmapBoard");
   board.innerHTML = roadmap.levels.length ? roadmap.levels.map((lv, i) => `<section class="roadmap-level" data-level="${lv.id}" style="--level-color:${lv.color}"><div class="level-label"><span class="level-no">LEVEL ${String(i + 1).padStart(2, "0")}</span><input value="${esc(lv.name)}" maxlength="30" aria-label="层级名称"><small>${esc(lv.note || (i === 0 ? "最高优先级" : "较低优先级"))}</small><div class="level-actions"><button data-action="up" title="上移">↑ 上移</button><button data-action="down" title="下移">↓ 下移</button><button data-action="delete" title="删除层级">删除</button></div></div><div class="task-lane" data-level="${lv.id}">${lv.tasks.map(t => `<article class="task-card ${t.done ? "done" : ""}" draggable="true" data-task="${t.id}"><div class="task-top"><button class="task-check" title="切换完成状态">${t.done ? "✓" : ""}</button><button class="task-menu" title="编辑任务">•••</button></div><h3>${esc(t.title)}</h3><p>${esc(t.desc || "暂无备注")}</p><footer><span>${esc(t.due || "未设时间")}</span><span>${t.done ? "已完成" : `优先级 ${i + 1}`}</span></footer></article>`).join("")}<button class="add-task-card" data-level="${lv.id}">＋ 添加任务</button></div></section>`).join("") : '<div class="empty-state" style="min-height:350px"><div>◎</div><h3>还没有任务层级</h3><p>添加第一层，开始规划训练。</p></div>';
@@ -684,6 +731,7 @@ function renderMarkdown(source) {
 }
 
 function loadBlogData() {
+  if (api.cloud.configured) { blogStore.blogs = []; blogStore.station = []; return; }
   try { blogStore.blogs = JSON.parse(localStorage.getItem(BLOG_KEY)) || []; } catch { blogStore.blogs = []; }
   try { blogStore.station = JSON.parse(localStorage.getItem(STATION_COMMENT_KEY)) || []; } catch { blogStore.station = []; }
   if (!Array.isArray(blogStore.blogs)) blogStore.blogs = [];
@@ -699,6 +747,7 @@ function loadBlogData() {
   blogStore.station = blogStore.station.filter(v => v && v.content).map(v => ({ ...cleanComment(v), type: ["bug", "suggestion", "other"].includes(v.type) ? v.type : "other" })).slice(-200);
 }
 function saveBlogData(message = "") {
+  if (api.cloud.configured) return false;
   try {
     localStorage.setItem(BLOG_KEY, JSON.stringify(blogStore.blogs));
     localStorage.setItem(STATION_COMMENT_KEY, JSON.stringify(blogStore.station));
@@ -721,7 +770,7 @@ function isBlogDirty() { return !$("#blogEditor").classList.contains("hidden") &
 function confirmBlogDiscard() { return !isBlogDirty() || confirm("博客还有未保存的修改，确定放弃吗？"); }
 function renderMyBlogs() {
   const key = $("#myBlogSearch").value.trim().toLowerCase(), visibility = $("#myBlogVisibility").value;
-  const blogs = [...blogStore.blogs].filter(blog => (!visibility || blog.visibility === visibility) && (!key || `${blog.title} ${blog.author} ${blog.tags.join(" ")}`.toLowerCase().includes(key))).sort((a, b) => b.updated - a.updated);
+  const blogs = [...blogStore.blogs].filter(blog => (!api.cloud.configured || blog.userId === api.cloud.user?.id) && (!visibility || blog.visibility === visibility) && (!key || `${blog.title} ${blog.author} ${blog.tags.join(" ")}`.toLowerCase().includes(key))).sort((a, b) => b.updated - a.updated);
   $("#myBlogList").innerHTML = blogs.length ? blogs.map(blog => `<article class="my-blog-item ${blog.id === blogStore.selected ? "active" : ""}" data-id="${esc(blog.id)}"><div class="blog-item-line"><span class="visibility-badge ${blog.visibility}">${blog.visibility === "public" ? "公开" : "私有"}</span><small>${nowText(blog.updated)}</small></div><h3>${esc(blog.title || "未命名文章")}</h3><p>${esc(articleExcerpt(blog))}</p><div class="blog-item-line"><span>${blog.comments.length} 条评论</span><button class="text-btn" data-read="${esc(blog.id)}">阅读 →</button></div></article>`).join("") : '<div class="empty-list blog-list-empty">没有匹配的文章</div>';
   $$(".my-blog-item", $("#myBlogList")).forEach(card => card.onclick = e => {
     const read = e.target.closest("[data-read]");
@@ -732,7 +781,7 @@ function renderMyBlogs() {
 function showBlogEditor(blog = null) {
   $("#blogEditorEmpty").classList.add("hidden"); $("#blogEditor").classList.remove("hidden");
   $("#blogEditorMode").textContent = blog ? "EDIT ARTICLE" : "NEW ARTICLE";
-  $("#blogTitle").value = blog?.title || ""; $("#blogAuthor").value = blog?.author || localStorage.getItem("leather-blog-author-v1") || "";
+  $("#blogTitle").value = blog?.title || ""; $("#blogAuthor").value = api.cloud.profile?.display_name || blog?.author || localStorage.getItem("leather-blog-author-v1") || "";
   $("#blogVisibility").value = blog?.visibility || "private"; $("#blogTags").value = (blog?.tags || []).join(", ");
   $("#blogSummary").value = blog?.summary || ""; $("#blogContent").value = blog?.content || "";
   $("#blogContent").classList.remove("hidden");
@@ -752,12 +801,22 @@ $("#newBlogBtn").onclick = () => {
 };
 $("#myBlogSearch").oninput = renderMyBlogs;
 $("#myBlogVisibility").onchange = renderMyBlogs;
-$("#blogEditor").onsubmit = e => {
+$("#blogEditor").onsubmit = async e => {
   e.preventDefault(); const value = blogEditorValues();
   if (!value.title) { $("#blogFormError").textContent = "文章标题不能为空"; return; }
   if (!value.content) { $("#blogFormError").textContent = "文章正文不能为空"; return; }
   const badField = findSensitive({ 标题: value.title, 署名: value.author, 标签: value.tags.join(" "), 摘要: value.summary, 正文: value.content });
-  if (badField) { $("#blogFormError").textContent = `${badField}包含不适宜或疑似通过拆分、变体绕过审查的内容`; return; }
+  if (badField && !api.cloud.configured) { $("#blogFormError").textContent = `${badField}包含不适宜或疑似通过拆分、变体绕过审查的内容`; return; }
+  if (api.cloud.configured) {
+    const old = blogStore.blogs.find(v => v.id === blogStore.selected);
+    try {
+      const saved = await api.savePost({ ...value, author: api.cloud.profile?.display_name || "Leather 用户", summary: value.summary || articleExcerpt(value) }, old?.id || null);
+      blogStore.selected = saved.id; blogStore.isNew = false; await reloadCloudContent();
+      const blog = blogStore.blogs.find(v => v.id === saved.id); if (blog) showBlogEditor(blog);
+      toast(value.visibility === "public" ? "文章已发布到公开广场" : "私有文章已保存");
+    } catch (error) { $("#blogFormError").textContent = error.message; await handlePossibleBan(); }
+    return;
+  }
   const time = Date.now(); let blog = blogStore.blogs.find(v => v.id === blogStore.selected);
   if (!blog) { blog = { id: uid(), created: time, comments: [] }; blogStore.blogs.push(blog); }
   Object.assign(blog, value, { author: value.author || "匿名作者", summary: value.summary || articleExcerpt(value), updated: time });
@@ -765,8 +824,13 @@ $("#blogEditor").onsubmit = e => {
   localStorage.setItem("leather-blog-author-v1", blog.author); blogStore.selected = blog.id; blogStore.isNew = false;
   showBlogEditor(blog); renderMyBlogs(); renderSquare(); toast(blog.visibility === "public" ? "文章已保存并发布到文章广场" : "私有文章已保存");
 };
-$("#deleteBlogBtn").onclick = () => {
+$("#deleteBlogBtn").onclick = async () => {
   const blog = blogStore.blogs.find(v => v.id === blogStore.selected); if (!blog || !confirm(`确定永久删除“${blog.title}”及其全部评论吗？`)) return;
+  if (api.cloud.configured) {
+    try { await api.deletePost(blog.id); blogStore.selected = ""; blogStore.isNew = false; await reloadCloudContent(); toast("文章已删除"); }
+    catch (error) { toast(error.message, "error"); return; }
+    $("#blogEditor").classList.add("hidden"); $("#blogEditorEmpty").classList.remove("hidden"); return;
+  }
   blogStore.blogs = blogStore.blogs.filter(v => v.id !== blog.id); blogStore.selected = ""; blogStore.isNew = false; saveBlogData("文章已删除");
   $("#blogEditor").classList.add("hidden"); $("#blogEditorEmpty").classList.remove("hidden"); renderMyBlogs(); renderSquare();
 };
@@ -796,61 +860,314 @@ function renderSquare() {
   const blogs = blogStore.blogs.filter(blog => blog.visibility === "public" && (!key || `${blog.title} ${blog.summary} ${blog.author} ${blog.tags.join(" ")}`.toLowerCase().includes(key)));
   blogs.sort((a, b) => sort === "comments" ? b.comments.length - a.comments.length || b.updated - a.updated : sort === "created" ? b.created - a.created : b.updated - a.updated);
   $("#squareCount").textContent = `${blogs.length} 篇公开文章`;
-  $("#squareGrid").innerHTML = blogs.length ? blogs.map(blog => `<article class="square-card" data-id="${esc(blog.id)}" tabindex="0"><div class="square-card-top"><div class="tag-row">${blog.tags.slice(0, 3).map(tag => `<span class="tag">${esc(tag)}</span>`).join("") || '<span class="tag">未分类</span>'}</div><span>${nowText(blog.updated)}</span></div><h2>${esc(blog.title)}</h2><p>${esc(articleExcerpt(blog))}</p><footer><span>由 ${esc(blog.author || "匿名作者")}</span><span>${blog.comments.length} 条评论　阅读 →</span></footer></article>`).join("") : '<div class="square-empty"><div>▦</div><h3>文章广场还是空的</h3><p>把博客设为公开并保存后，它就会出现在这里。</p><a class="btn primary small" href="#blogs">去写第一篇</a></div>';
+  $("#squareGrid").innerHTML = blogs.length ? blogs.map(blog => `<article class="square-card" data-id="${esc(blog.id)}" tabindex="0"><div class="square-card-top"><div class="tag-row">${blog.tags.slice(0, 3).map(tag => `<span class="tag">${esc(tag)}</span>`).join("") || '<span class="tag">未分类</span>'}</div><span>${nowText(blog.updated)}</span></div><h2>${esc(blog.title)}</h2><p>${esc(articleExcerpt(blog))}</p><footer><span>由 ${userNameHtml(blog.author || "匿名作者", blog.authorHandle, blog.authorRole, blog.authorColor, blog.userId)}</span><span>${blog.comments.length} 条评论　阅读 →</span></footer></article>`).join("") : '<div class="square-empty"><div>▦</div><h3>文章广场还是空的</h3><p>登录后把博客设为公开，它就会出现在这里。</p><a class="btn primary small" href="#blogs">去写第一篇</a></div>';
   $$(".square-card", $("#squareGrid")).forEach(card => {
-    card.onclick = () => { location.hash = `article/${encodeURIComponent(card.dataset.id)}`; };
+    card.onclick = e => { if (e.target.closest(".user-name")) return; location.hash = `article/${encodeURIComponent(card.dataset.id)}`; };
     card.onkeydown = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); card.click(); } };
   });
 }
 $("#squareSearch").oninput = renderSquare;
 $("#squareSort").onchange = renderSquare;
 
+function canManageUserContent(userId, role = "user") {
+  if (!api.cloud.user) return false;
+  if (userId === api.cloud.user.id) return true;
+  if (api.cloud.profile?.role === "owner") return role !== "owner";
+  return api.cloud.profile?.role === "admin" && role === "user";
+}
+function userNameHtml(name, handle = "", role = "user", color = "blue", id = "") {
+  const badge = role === "owner" ? '<span class="station-master-badge">站长</span>' : role === "admin" ? '<span class="admin-mini-badge">管理员</span>' : "";
+  const link = id ? `#profile/${encodeURIComponent(id)}` : handle ? `#profile/${encodeURIComponent(handle)}` : "#leaderboard";
+  return `<a class="user-name name-${role === "user" ? color : "purple"}" href="${link}">${esc(name || "Leather 用户")}</a>${badge}`;
+}
 function commentHtml(comment) {
-  return `<article class="comment-item"><div><b>${esc(comment.author || "匿名访客")}</b><span>${nowText(comment.time)}</span><button class="text-btn delete-comment" data-id="${esc(comment.id)}">删除</button></div><p>${esc(comment.content).replace(/\n/g, "<br>")}</p></article>`;
+  return `<article class="comment-item"><div>${userNameHtml(comment.author, comment.authorHandle, comment.authorRole, comment.authorColor, comment.userId)}<span>${nowText(comment.time)}</span>${api.cloud.configured && comment.userId === api.cloud.user?.id ? `<button class="text-btn edit-comment" data-id="${esc(comment.id)}">编辑</button>` : ""}${canManageUserContent(comment.userId, comment.authorRole) ? `<button class="text-btn delete-comment" data-id="${esc(comment.id)}">删除</button>` : ""}</div><p>${esc(comment.content).replace(/\n/g, "<br>")}</p></article>`;
 }
 function renderArticle(id) {
   const blog = blogStore.blogs.find(v => v.id === id), box = $("#articleView");
   if (!blog) { box.innerHTML = '<div class="square-empty"><div>?</div><h3>没有找到这篇文章</h3><p>它可能已经被删除，或链接不完整。</p><a class="btn primary small" href="#square">返回文章广场</a></div>'; return; }
   $("#articleBackBtn").textContent = blog.visibility === "public" ? "← 返回文章广场" : "← 返回我的博客";
   $("#articleBackBtn").onclick = () => { location.hash = blog.visibility === "public" ? "square" : "blogs"; };
-  box.innerHTML = `<article class="article-shell"><header class="article-header"><div class="tag-row">${blog.tags.map(tag => `<span class="tag">${esc(tag)}</span>`).join("")}</div><h1>${esc(blog.title)}</h1><p>${esc(blog.summary || articleExcerpt(blog))}</p><div><span>作者：${esc(blog.author || "匿名作者")}</span><span>发布于 ${nowText(blog.created)}</span><span>更新于 ${nowText(blog.updated)}</span><span class="visibility-badge ${blog.visibility}">${blog.visibility === "public" ? "公开文章" : "私有文章"}</span></div></header><div class="markdown-body article-content">${renderMarkdown(blog.content)}</div></article>${blog.visibility === "public" ? `<section class="article-comments"><div class="comment-title"><div><span class="eyebrow">DISCUSSION</span><h2>文章评论</h2></div><span>${blog.comments.length} 条评论</span></div><form id="articleCommentForm" class="comment-form"><input id="articleCommentAuthor" maxlength="30" value="${esc(localStorage.getItem("leather-comment-author-v1") || "")}" placeholder="你的称呼"><textarea id="articleCommentContent" maxlength="1000" placeholder="针对文章内容友善讨论……" required></textarea><div><small>评论会经过敏感内容、变体与垃圾链接检查。</small><button class="btn primary small" type="submit">发表评论</button></div></form><div id="articleCommentList" class="comment-list">${blog.comments.length ? [...blog.comments].reverse().map(commentHtml).join("") : '<div class="empty-list">还没有评论，来参与第一次讨论吧。</div>'}</div></section>` : '<div class="private-article-note">这是一篇私有文章，不会显示在文章广场，也不会开放评论。</div>'}`;
+  box.innerHTML = `<article class="article-shell"><header class="article-header"><div class="tag-row">${blog.tags.map(tag => `<span class="tag">${esc(tag)}</span>`).join("")}</div><h1>${esc(blog.title)}</h1><p>${esc(blog.summary || articleExcerpt(blog))}</p><div><span>作者：${userNameHtml(blog.author || "匿名作者", blog.authorHandle, blog.authorRole, blog.authorColor, blog.userId)}</span><span>发布于 ${nowText(blog.created)}</span><span>更新于 ${nowText(blog.updated)}</span><span class="visibility-badge ${blog.visibility}">${blog.visibility === "public" ? "公开文章" : "私有文章"}</span></div></header><div class="markdown-body article-content">${renderMarkdown(blog.content)}</div></article>${blog.visibility === "public" ? `<section class="article-comments"><div class="comment-title"><div><span class="eyebrow">DISCUSSION</span><h2>文章评论</h2></div><span>${blog.comments.length} 条评论</span></div><form id="articleCommentForm" class="comment-form"><input id="articleCommentAuthor" maxlength="30" value="${esc(api.cloud.profile?.display_name || "")}" placeholder="登录后自动使用账号名称" readonly><textarea id="articleCommentContent" maxlength="1000" placeholder="针对文章内容友善讨论……" required></textarea><div><small>评论会同时经过前端提示和服务端最终审核。</small><button class="btn primary small" type="submit">发表评论</button></div></form><div id="articleCommentList" class="comment-list">${blog.comments.length ? [...blog.comments].reverse().map(commentHtml).join("") : '<div class="empty-list">还没有评论，来参与第一次讨论吧。</div>'}</div></section>` : '<div class="private-article-note">这是一篇私有文章，不会显示在文章广场，也不会开放评论。</div>'}`;
   if (blog.visibility !== "public") return;
-  $("#articleCommentForm").onsubmit = e => {
-    e.preventDefault(); const author = $("#articleCommentAuthor").value.trim() || "匿名访客", content = $("#articleCommentContent").value.trim();
-    const error = validateComment(author, content); if (error) { toast(error, "error"); return; }
+  $("#articleCommentForm").onsubmit = async e => {
+    e.preventDefault(); if (!api.cloud.user) { location.hash = "account"; toast("登录后才能评论", "error"); return; }
+    const author = api.cloud.profile?.display_name || "Leather 用户", content = $("#articleCommentContent").value.trim();
+    const error = validateComment(author, content);
+    if (error) {
+      const sensitive = findSensitive({ 称呼: author, 评论内容: content });
+      if (sensitive && api.cloud.configured) { try { await api.enforceTextPolicy(`${author}\n${content}`, "post_comments"); $("#articleCommentContent").value = ""; await handlePossibleBan(); } catch {} }
+      toast(error, "error"); return;
+    }
     if (blog.comments.some(v => normalizeSensitive(v.content).compact === normalizeSensitive(content).compact)) { toast("请勿重复提交相同评论", "error"); return; }
     if (!useCommentQuota()) { toast("提交过于频繁，请一分钟后再试", "error"); return; }
-    blog.comments.push({ id: uid(), author, content, time: Date.now() }); localStorage.setItem("leather-comment-author-v1", author);
-    saveBlogData("评论已发表"); renderArticle(blog.id); renderSquare();
+    if (api.cloud.configured) {
+      try { await api.addPostComment(blog.id, content); await reloadCloudContent(); renderArticle(blog.id); toast("评论已发表"); }
+      catch (err) { toast(err.message, "error"); await handlePossibleBan(); }
+    } else { blog.comments.push({ id: uid(), author, content, time: Date.now() }); localStorage.setItem("leather-comment-author-v1", author); saveBlogData("评论已发表"); renderArticle(blog.id); renderSquare(); }
   };
-  $$(".delete-comment", $("#articleCommentList")).forEach(button => button.onclick = () => {
+  $$(".delete-comment", $("#articleCommentList")).forEach(button => button.onclick = async () => {
     if (!confirm("确定删除这条本地评论吗？")) return;
-    blog.comments = blog.comments.filter(v => v.id !== button.dataset.id); saveBlogData("评论已删除"); renderArticle(blog.id); renderSquare();
+    if (api.cloud.configured) { try { await api.deletePostComment(button.dataset.id); await reloadCloudContent(); renderArticle(blog.id); toast("评论已删除"); } catch (error) { toast(error.message, "error"); } }
+    else { blog.comments = blog.comments.filter(v => v.id !== button.dataset.id); saveBlogData("评论已删除"); renderArticle(blog.id); renderSquare(); }
+  });
+  $$(".edit-comment", $("#articleCommentList")).forEach(button => button.onclick = async () => {
+    const old = blog.comments.find(v => v.id === button.dataset.id), content = prompt("修改评论：", old?.content || ""); if (content === null || content.trim() === old?.content) return;
+    const error = validateComment(api.cloud.profile?.display_name || "用户", content);
+    if (error) { const sensitive = findSensitive({ 评论内容: content }); if (sensitive) { try { await api.enforceTextPolicy(content, "post_comments"); await handlePossibleBan(); } catch {} } toast(error,"error"); return; }
+    try { await api.updatePostComment(button.dataset.id, content.trim()); await reloadCloudContent(); renderArticle(blog.id); toast("评论已更新"); } catch (err) { toast(err.message,"error"); await handlePossibleBan(); }
   });
 }
 
 function renderStationComments() {
   const names = { bug: "Bug", suggestion: "建议", other: "留言" };
-  $("#stationCommentList").innerHTML = blogStore.station.length ? [...blogStore.station].reverse().map(comment => `<article class="comment-item station-item"><div><span class="comment-type ${comment.type}">${names[comment.type] || "留言"}</span><b>${esc(comment.author || "匿名访客")}</b><span>${nowText(comment.time)}</span><button class="text-btn delete-station-comment" data-id="${esc(comment.id)}">删除</button></div><p>${esc(comment.content).replace(/\n/g, "<br>")}</p></article>`).join("") : '<div class="empty-list">暂无工作站留言。</div>';
-  $$(".delete-station-comment", $("#stationCommentList")).forEach(button => button.onclick = () => {
+  $("#stationCommentList").innerHTML = blogStore.station.length ? [...blogStore.station].reverse().map(comment => `<article class="comment-item station-item"><div><span class="comment-type ${comment.type}">${names[comment.type] || "留言"}</span>${userNameHtml(comment.author, comment.authorHandle, comment.authorRole, comment.authorColor, comment.userId)}<span>${nowText(comment.time)}</span>${api.cloud.configured && comment.userId === api.cloud.user?.id ? `<button class="text-btn edit-station-comment" data-id="${esc(comment.id)}">编辑</button>` : ""}${canManageUserContent(comment.userId, comment.authorRole) ? `<button class="text-btn delete-station-comment" data-id="${esc(comment.id)}">删除</button>` : ""}</div><p>${esc(comment.content).replace(/\n/g, "<br>")}</p></article>`).join("") : '<div class="empty-list">暂无工作站留言。</div>';
+  $$(".delete-station-comment", $("#stationCommentList")).forEach(button => button.onclick = async () => {
     if (!confirm("确定删除这条本地留言吗？")) return;
-    blogStore.station = blogStore.station.filter(v => v.id !== button.dataset.id); saveBlogData("留言已删除"); renderStationComments();
+    if (api.cloud.configured) { try { await api.deleteStationComment(button.dataset.id); await reloadCloudContent(); toast("留言已删除"); } catch (error) { toast(error.message, "error"); } }
+    else { blogStore.station = blogStore.station.filter(v => v.id !== button.dataset.id); saveBlogData("留言已删除"); renderStationComments(); }
+  });
+  $$(".edit-station-comment", $("#stationCommentList")).forEach(button => button.onclick = async () => {
+    const old = blogStore.station.find(v => v.id === button.dataset.id), content = prompt("修改留言：", old?.content || ""); if (content === null || content.trim() === old?.content) return;
+    const error = validateComment(api.cloud.profile?.display_name || "用户", content);
+    if (error) { const sensitive = findSensitive({ 留言内容: content }); if (sensitive) { try { await api.enforceTextPolicy(content, "station_comments"); await handlePossibleBan(); } catch {} } toast(error,"error"); return; }
+    try { await api.updateStationComment(button.dataset.id, content.trim()); await reloadCloudContent(); toast("留言已更新"); } catch (err) { toast(err.message,"error"); await handlePossibleBan(); }
   });
 }
-$("#stationCommentForm").onsubmit = e => {
-  e.preventDefault(); const author = $("#stationCommentAuthor").value.trim() || "匿名访客", content = $("#stationCommentContent").value.trim(), type = $("#stationCommentType").value;
-  const error = validateComment(author, content); if (error) { toast(error, "error"); return; }
+$("#stationCommentForm").onsubmit = async e => {
+  e.preventDefault(); if (!api.cloud.user) { location.hash = "account"; toast("登录后才能留言", "error"); return; }
+  const author = api.cloud.profile?.display_name || "Leather 用户", content = $("#stationCommentContent").value.trim(), type = $("#stationCommentType").value;
+  const error = validateComment(author, content);
+  if (error) {
+    const sensitive = findSensitive({ 称呼: author, 评论内容: content });
+    if (sensitive && api.cloud.configured) { try { await api.enforceTextPolicy(`${author}\n${content}`, "station_comments"); $("#stationCommentContent").value = ""; await handlePossibleBan(); } catch {} }
+    toast(error, "error"); return;
+  }
   if (blogStore.station.some(v => normalizeSensitive(v.content).compact === normalizeSensitive(content).compact)) { toast("请勿重复提交相同留言", "error"); return; }
   if (!useCommentQuota()) { toast("提交过于频繁，请一分钟后再试", "error"); return; }
-  blogStore.station.push({ id: uid(), author, type, content, time: Date.now() });
-  if (blogStore.station.length > 200) blogStore.station.splice(0, blogStore.station.length - 200);
-  saveBlogData("工作站留言已提交"); $("#stationCommentContent").value = ""; renderStationComments();
+  if (api.cloud.configured) { try { await api.addStationComment(type, content); $("#stationCommentContent").value = ""; await reloadCloudContent(); toast("工作站留言已提交"); } catch (err) { toast(err.message, "error"); await handlePossibleBan(); } }
+  else { blogStore.station.push({ id: uid(), author, type, content, time: Date.now() }); if (blogStore.station.length > 200) blogStore.station.splice(0, blogStore.station.length - 200); saveBlogData("工作站留言已提交"); $("#stationCommentContent").value = ""; renderStationComments(); }
 };
 
-loadBlogData();
-renderMyBlogs();
-renderSquare();
-renderStationComments();
-route();
+// Supabase account, profile, check-in, ranking and moderation UI
+let authMode = "login", avatarFile = null, leaderboardTimer = 0, adminUsersCache = [];
+const hasWriteAccess = () => !!(api.cloud.user && api.cloud.profile && !api.cloud.profile.banned_at);
+const isStaff = () => ["admin", "owner"].includes(api.cloud.profile?.role);
+const chinaDateText = value => new Intl.DateTimeFormat("zh-CN", { timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit" }).format(value ? new Date(`${value}T00:00:00+08:00`) : new Date());
+
+function avatarHtml(profile, cls = "") {
+  const name = profile?.display_name || profile?.handle || "L";
+  return profile?.avatar_url ? `<span class="profile-avatar ${cls}"><img src="${esc(profile.avatar_url)}" alt=""></span>` : `<span class="profile-avatar ${cls}">${esc(name.slice(0, 1).toUpperCase())}</span>`;
+}
+function roleBadge(role) { return role === "owner" ? '<span class="station-master-badge">站长</span>' : role === "admin" ? '<span class="admin-mini-badge">管理员</span>' : ""; }
+
+async function reloadCloudContent() {
+  if (!api.cloud.configured) return;
+  try {
+    const data = await api.fetchBlogData(); blogStore.blogs = data.blogs; blogStore.station = data.station;
+    renderMyBlogs(); renderSquare(); renderStationComments();
+  } catch (error) { toast(`公开内容加载失败：${error.message}`, "error"); }
+}
+async function loadCloudVault() {
+  if (!hasWriteAccess()) return;
+  try {
+    let data = await api.fetchVault();
+    if (!data.sections.length) { await api.createSection({ name: "常用模板", color: colors[0], position: 0 }); data = await api.fetchVault(); }
+    Object.assign(vault, { id: "cloud", keyword: api.cloud.profile.display_name, password: "", key: null, salt: null, data, sid: data.sections[0]?.id || "", pid: data.sections[0]?.pages[0]?.id || "", versionId: "" });
+    $("#importVaultBtn").classList.add("hidden"); $("#exportVaultBtn").classList.add("hidden"); $("#lockVaultBtn").classList.add("hidden"); openVaultWorkspace();
+  } catch (error) { toast(`模板加载失败：${error.message}`, "error"); }
+}
+async function loadCloudPlan() {
+  if (!hasWriteAccess()) return;
+  try { const plan = await api.fetchPlan(); roadmap.levels = Array.isArray(plan?.data) ? plan.data : sampleRoadmap(); renderRoadmap(); }
+  catch (error) { toast(`计划加载失败：${error.message}`, "error"); }
+}
+async function handlePossibleBan() {
+  if (!api.cloud.user) return;
+  try { await api.refreshProfile(); applyAuthState(); }
+  catch {}
+}
+
+function applyAuthState() {
+  const configured = api.cloud.configured, signed = !!api.cloud.user, active = hasWriteAccess(), profile = api.cloud.profile;
+  $("#configBanner").classList.toggle("hidden", configured);
+  $("#readonlyBanner").classList.toggle("hidden", active || !configured);
+  $("#adminNav").classList.toggle("hidden", !isStaff());
+  document.body.classList.toggle("guest", !active); document.body.classList.toggle("signed-in", active); document.body.classList.toggle("banned", !!profile?.banned_at);
+  $("#topAccountName").textContent = signed ? (profile?.display_name || api.cloud.user.email || "账号") : "登录";
+  $("#topAccountName").className = signed ? `name-${profile?.role === "user" ? (api.cloud.stats?.name_color || "blue") : "purple"}` : "";
+  $("#topAccountAvatar").innerHTML = profile?.avatar_url ? `<img src="${esc(profile.avatar_url)}" alt="">` : esc((profile?.display_name || api.cloud.user?.email || "?").slice(0, 1).toUpperCase());
+  $("#sidebarStatusTitle").textContent = profile?.banned_at ? "账号已封禁" : active ? "云端已同步" : "访客只读";
+  $("#sidebarStatusText").textContent = profile?.banned_at ? (profile.ban_reason || "写入权限已停用") : active ? `@${profile.handle}` : "登录后可保存与发布";
+  $("#saveState").innerHTML = `<i></i>${profile?.banned_at ? "账号封禁" : active ? "Supabase 已连接" : configured ? "访客只读" : "等待配置"}`;
+  $("#stationCommentAuthor").value = active ? profile.display_name : "";
+  renderAccount();
+}
+
+function renderAccount() {
+  const signed = !!api.cloud.user, profile = api.cloud.profile, stats = api.cloud.stats;
+  $("#authGuestPanel").classList.toggle("hidden", signed); $("#accountProfilePanel").classList.toggle("hidden", !signed);
+  if (!signed || !profile) return;
+  $("#profileDisplayName").value = profile.display_name || ""; $("#profileHandle").value = profile.handle || ""; $("#profileBio").value = profile.bio || "";
+  $("#profileAvatarPreview").outerHTML = avatarHtml(profile, "large").replace('class="profile-avatar large"', 'class="profile-avatar large" id="profileAvatarPreview"');
+  const request = api.cloud.avatarRequest, avatarStatus = $("#avatarRequestStatus");
+  avatarStatus.className = request ? `avatar-status-${request.status}` : "";
+  avatarStatus.textContent = request?.status === "pending" ? "新头像正在等待管理员审核"
+    : request?.status === "rejected" ? `最近的头像未通过${request.review_note ? `：${request.review_note}` : ""}`
+    : request?.status === "approved" ? "最近提交的头像已通过审核"
+    : "最大 2 MB，提交后等待管理员审核";
+  $("#accountLevelSummary").innerHTML = profile.banned_at ? `<div class="ban-notice"><b>账号已封禁</b><p>${esc(profile.ban_reason || "内容违规")}</p></div>` : `<div class="score-orb name-${stats?.name_color || "blue"}">${Number(stats?.score || 0)}</div><div><b class="name-${stats?.name_color || "blue"}">${esc(profile.display_name)}</b>${roleBadge(profile.role)}<p>累计签到 ${Number(stats?.checkin_count || 0)} 次</p></div>`;
+  $("#myPublicProfileBtn").href = `#profile/${encodeURIComponent(profile.id)}`;
+}
+
+$$('[data-auth-tab]').forEach(button => button.onclick = () => {
+  authMode = button.dataset.authTab; $$('[data-auth-tab]').forEach(v => v.classList.toggle("active", v === button));
+  $("#authConfirmLabel").classList.toggle("hidden", authMode !== "signup"); $("#authPasswordConfirm").required = authMode === "signup";
+  $("#emailAuthSubmit").textContent = authMode === "signup" ? "创建账号" : "登录"; $("#authError").textContent = "";
+});
+$("#emailAuthForm").onsubmit = async e => {
+  e.preventDefault(); if (!api.cloud.configured) { $("#authError").textContent = "请先配置 Supabase 环境变量"; return; }
+  const email = $("#authEmail").value.trim(), password = $("#authPassword").value; $("#authError").textContent = "";
+  if (password.length < 8) { $("#authError").textContent = "密码至少 8 位"; return; }
+  if (authMode === "signup" && password !== $("#authPasswordConfirm").value) { $("#authError").textContent = "两次密码不一致"; return; }
+  $("#emailAuthSubmit").disabled = true;
+  try { if (authMode === "signup") { const data = await api.emailSignup(email, password); toast(data.session ? "注册并登录成功" : "验证邮件已发送，请完成邮箱验证"); } else await api.emailLogin(email, password); }
+  catch (error) { $("#authError").textContent = error.message; }
+  finally { $("#emailAuthSubmit").disabled = false; }
+};
+$("#githubAuthBtn").onclick = async () => { if (!api.cloud.configured) { toast("请先配置 Supabase", "error"); return; } try { await api.githubLogin(); } catch (error) { toast(error.message, "error"); } };
+$("#resetPasswordBtn").onclick = async () => { const email = $("#authEmail").value.trim(); if (!email) { $("#authError").textContent = "请先填写邮箱"; return; } try { await api.sendPasswordReset(email); toast("密码重置邮件已发送"); } catch (error) { $("#authError").textContent = error.message; } };
+$("#signOutBtn").onclick = async () => { if (!confirmBlogDiscard() || !confirmDiscard()) return; try { await api.signOut(); location.hash = "home"; } catch (error) { toast(error.message, "error"); } };
+$("#profileAvatarFile").onchange = e => { avatarFile = e.target.files[0] || null; if (!avatarFile) return; if (avatarFile.size > 2 * 1024 * 1024) { toast("头像不能超过 2 MB", "error"); avatarFile = null; e.target.value = ""; return; } const url = URL.createObjectURL(avatarFile); $("#profileAvatarPreview").innerHTML = `<img src="${url}" alt="头像预览">`; $("#avatarRequestStatus").textContent = "保存资料后将提交管理员审核"; $("#avatarRequestStatus").className = "avatar-status-pending"; };
+$("#profileForm").onsubmit = async e => {
+  e.preventDefault(); const displayName = $("#profileDisplayName").value.trim(), handle = $("#profileHandle").value.trim().toLowerCase(), bio = $("#profileBio").value.trim();
+  $("#profileError").textContent = ""; const bad = findSensitive({ 名字: displayName, ID: handle, 个人简介: bio }); if (bad && !api.cloud.configured) { $("#profileError").textContent = `${bad}包含不适宜内容`; return; }
+  if (handle === "leather-handbag" && api.cloud.profile?.role !== "owner") { $("#profileError").textContent = "这个 ID 为站长保留"; return; }
+  try { const hasAvatar = !!avatarFile; await api.updateProfile({ displayName, handle, bio }); if (avatarFile) await api.uploadAvatar(avatarFile); avatarFile = null; $("#profileAvatarFile").value = ""; await api.refreshProfile(); applyAuthState(); await reloadCloudContent(); toast(hasAvatar ? "资料已保存，头像已提交审核" : "个人资料已保存"); }
+  catch (error) { $("#profileError").textContent = error.message; await handlePossibleBan(); }
+};
+$("#passwordForm").onsubmit = async e => {
+  e.preventDefault(); const one = $("#newPassword").value, two = $("#newPasswordConfirm").value; $("#passwordError").textContent = "";
+  if (one.length < 8) { $("#passwordError").textContent = "密码至少 8 位"; return; } if (one !== two) { $("#passwordError").textContent = "两次密码不一致"; return; }
+  try { await api.updatePassword(one); e.target.reset(); toast("密码已更新"); } catch (error) { $("#passwordError").textContent = error.message; }
+};
+
+function showCheckin(result) {
+  if (!result) { $("#checkinNumber").textContent = "------"; $("#checkinRarity").textContent = "等待抽取"; $("#checkinRarity").className = "rarity-badge common"; $("#checkinMessage").textContent = "点击按钮生成今天唯一的随机数字。"; $("#dailyCheckinBtn").disabled = false; $("#dailyCheckinBtn").textContent = "生成数字并签到"; return; }
+  $("#checkinNumber").textContent = String(result.number).padStart(6, "0"); $("#checkinRarity").textContent = result.rarity_label; $("#checkinRarity").className = `rarity-badge ${result.rarity}`;
+  $("#checkinMessage").textContent = `今日签到完成 · ${result.rarity_label}数字`; $("#dailyCheckinBtn").disabled = true; $("#dailyCheckinBtn").textContent = "今天已经签到";
+}
+async function renderCheckinPage() {
+  if (!hasWriteAccess()) return; $("#checkinDate").textContent = `${chinaDateText()} · 今日签到`;
+  try {
+    const history = await api.fetchCheckins(), today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai" }).format(new Date()), current = history.find(v => v.checkin_date === today);
+    showCheckin(current); $("#checkinHistoryCount").textContent = `${history.length} 次`;
+    $("#checkinHistoryList").innerHTML = history.length ? history.map(item => `<article class="checkin-chip ${item.rarity}"><span>${esc(item.checkin_date)}</span><b>${String(item.number).padStart(6, "0")}</b><em>${esc(item.rarity_label)}</em></article>`).join("") : '<div class="empty-list">还没有签到记录。</div>';
+  } catch (error) { toast(error.message, "error"); }
+}
+$("#dailyCheckinBtn").onclick = async () => {
+  if (!hasWriteAccess()) { location.hash = "account"; return; } $("#dailyCheckinBtn").disabled = true; $("#dailyCheckinBtn").textContent = "生成中…";
+  try { const data = await api.doDailyCheckin(); showCheckin(Array.isArray(data) ? data[0] : data); await api.refreshProfile(); applyAuthState(); await renderCheckinPage(); }
+  catch (error) { toast(error.message, "error"); $("#dailyCheckinBtn").disabled = false; await handlePossibleBan(); }
+};
+
+async function renderLeaderboard() {
+  if (!api.cloud.configured) { $("#leaderboardList").innerHTML = '<div class="square-empty"><div>♜</div><h3>等待 Supabase 配置</h3><p>配置环境变量并应用数据库迁移后，排行榜会显示所有用户。</p></div>'; return; }
+  try {
+    const list = await api.fetchLeaderboard($("#userSearch").value);
+    $("#leaderboardList").innerHTML = list.length ? list.map((profile, i) => `<a class="rank-row" href="#profile/${encodeURIComponent(profile.id)}"><span class="rank-no">${String(i + 1).padStart(2, "0")}</span>${avatarHtml(profile)}<div class="rank-user"><b class="name-${profile.role === "user" ? profile.name_color : "purple"}">${esc(profile.display_name)}</b>${roleBadge(profile.role)}<small>@${esc(profile.handle)}</small></div><div class="rank-stat"><b>${Number(profile.score)}</b><span>等级分</span></div><div class="rank-stat"><b>${Number(profile.checkin_count)}</b><span>签到</span></div></a>`).join("") : '<div class="square-empty"><div>♜</div><h3>没有找到用户</h3><p>尝试更换名字或 ID。</p></div>';
+  } catch (error) { $("#leaderboardList").innerHTML = `<div class="empty-list">${esc(error.message)}</div>`; }
+}
+$("#userSearch").oninput = () => { clearTimeout(leaderboardTimer); leaderboardTimer = setTimeout(renderLeaderboard, 260); };
+async function renderPublicProfile(id) {
+  if (!api.cloud.configured) { $("#publicProfileView").innerHTML = '<div class="square-empty"><h3>等待 Supabase 配置</h3><a class="btn primary small" href="#account">查看配置提示</a></div>'; return; }
+  const target = id || api.cloud.user?.id; if (!target) { $("#publicProfileView").innerHTML = '<div class="square-empty"><h3>用户不存在</h3></div>'; return; }
+  try {
+    const profile = await api.fetchPublicProfile(target); if (!profile) throw new Error("没有找到这个用户");
+    const articles = blogStore.blogs.filter(v => v.userId === profile.id && v.visibility === "public").sort((a,b) => b.updated-a.updated);
+    $("#publicProfileView").innerHTML = `<section class="public-profile-card">${avatarHtml(profile,"xlarge")}<div><span class="eyebrow">PUBLIC PROFILE</span><h1 class="name-${profile.role === "user" ? profile.name_color : "purple"}">${esc(profile.display_name)}</h1><p class="profile-handle">@${esc(profile.handle)} ${roleBadge(profile.role)}</p><p>${esc(profile.bio || "这个用户还没有填写个人简介。")}</p><div class="profile-stats"><span><b>${Number(profile.score)}</b>等级分</span><span><b>${Number(profile.checkin_count)}</b>签到次数</span><span><b>${articles.length}</b>公开文章</span></div></div></section><section class="profile-articles"><div class="comment-title"><div><span class="eyebrow">PUBLIC POSTS</span><h2>公开文章</h2></div></div><div class="square-grid">${articles.length ? articles.map(blog => `<article class="square-card profile-post" data-id="${blog.id}"><h2>${esc(blog.title)}</h2><p>${esc(articleExcerpt(blog))}</p><footer><span>${nowText(blog.updated)}</span><span>${blog.comments.length} 条评论　阅读 →</span></footer></article>`).join("") : '<div class="empty-list">暂无公开文章。</div>'}</div></section>`;
+    $$(".profile-post", $("#publicProfileView")).forEach(card => card.onclick = () => location.hash = `article/${encodeURIComponent(card.dataset.id)}`);
+  } catch (error) { $("#publicProfileView").innerHTML = `<div class="square-empty"><div>?</div><h3>${esc(error.message)}</h3><a class="btn primary small" href="#leaderboard">返回排行榜</a></div>`; }
+}
+$("#profileBackBtn").onclick = () => location.hash = "leaderboard";
+
+async function renderAdminUsers() {
+  try {
+    adminUsersCache = await api.fetchAdminUsers($("#adminUserSearch").value); const me = api.cloud.profile;
+    $("#adminUserList").innerHTML = adminUsersCache.length ? adminUsersCache.map(user => {
+      const canBan = user.id !== api.cloud.user.id && user.role !== "owner" && (me.role === "owner" || user.role === "user");
+      return `<article class="admin-row"><div>${avatarHtml(user)}<span><b class="name-${user.role === "user" ? user.name_color : "purple"}">${esc(user.display_name)}</b>${roleBadge(user.role)}<small>@${esc(user.handle)} · 状态正常 · ${Number(user.score)} 分</small></span></div><div class="admin-actions">${canBan ? `<button data-admin-act="ban" data-id="${user.id}">封号</button>` : ""}${me.role === "owner" && user.id !== me.id && user.role === "user" ? `<button data-admin-act="promote" data-id="${user.id}">授权管理员</button>` : ""}${me.role === "owner" && user.role === "admin" ? `<button data-admin-act="demote" data-id="${user.id}">解除管理员</button>` : ""}</div></article>`;
+    }).join("") : '<div class="empty-list">没有匹配用户</div>';
+    bindAdminUserActions();
+  } catch (error) { $("#adminUserList").innerHTML = `<div class="empty-list">${esc(error.message)}</div>`; }
+}
+function bindAdminUserActions() {
+  $$('[data-admin-act]', $("#adminUserList")).forEach(button => button.onclick = async () => {
+    const act = button.dataset.adminAct, id = button.dataset.id;
+    try {
+      if (act === "ban") { const reason = prompt("请输入封禁原因（会记录在审计日志）："); if (!reason) return; await api.banUser(id, reason); }
+      if (act === "promote" && confirm("授权后对方可以查看全部内容、删除普通用户内容并封禁普通用户，确定吗？")) await api.setAdmin(id, true);
+      if (act === "demote" && confirm("确定解除管理员权限吗？")) await api.setAdmin(id, false);
+      await renderAdmin(); toast("管理操作已完成");
+    } catch (error) { toast(error.message, "error"); }
+  });
+}
+async function renderAvatarRequests() {
+  try {
+    const list = await api.fetchAvatarRequests(); $("#avatarReviewCount").textContent = `${list.length} 项`;
+    $("#avatarRequestList").innerHTML = list.length ? list.map(item => {
+      const user = item.profile || { display_name: "未知用户", handle: item.user_id, role: "user" };
+      const canReview = api.cloud.profile.role === "owner" || user.role === "user";
+      return `<article class="admin-row avatar-review-row"><div><img class="avatar-review-image" src="${esc(item.avatar_url)}" alt="待审核头像"><span><b>${esc(user.display_name)}${roleBadge(user.role)}</b><small>@${esc(user.handle)} · ${nowText(Date.parse(item.created_at))}</small></span></div>${canReview ? `<div class="admin-actions"><button data-avatar-act="approve" data-id="${item.id}">通过</button><button data-avatar-act="reject" data-id="${item.id}">拒绝</button></div>` : ""}</article>`;
+    }).join("") : '<div class="empty-list">暂无待审核头像</div>';
+    $$('[data-avatar-act]', $("#avatarRequestList")).forEach(button => button.onclick = async () => {
+      const approved = button.dataset.avatarAct === "approve";
+      if (approved && !confirm("确认该头像适合公开展示吗？")) return;
+      const note = approved ? "" : prompt("请输入拒绝原因（会显示给用户）：", "头像不符合公开展示规范");
+      if (!approved && note === null) return;
+      try { await api.reviewAvatarRequest(button.dataset.id, approved, note || ""); await Promise.all([renderAvatarRequests(), renderModerationEvents()]); toast(approved ? "头像已通过" : "头像已拒绝"); }
+      catch (error) { toast(error.message, "error"); }
+    });
+  } catch (error) { $("#avatarRequestList").innerHTML = `<div class="empty-list">${esc(error.message)}</div>`; }
+}
+async function renderOwnerBans() {
+  const owner = api.cloud.profile?.role === "owner"; $("#ownerBanCard").classList.toggle("hidden", !owner); if (!owner) return;
+  try {
+    const list = await api.fetchBannedUsers(); $("#ownerBanCount").textContent = `${list.length} 人`;
+    $("#ownerBanList").innerHTML = list.length ? list.map(user => `<article class="admin-row"><div>${avatarHtml(user)}<span><b>${esc(user.display_name)}</b><small>@${esc(user.handle)} · ${nowText(Date.parse(user.banned_at))}</small><small class="ban-reason">${esc(user.ban_reason || "未记录原因")}</small></span></div><div class="admin-actions"><button data-owner-unban="${user.id}">解封</button></div></article>`).join("") : '<div class="empty-list">当前没有被封禁的账号</div>';
+    $$('[data-owner-unban]', $("#ownerBanList")).forEach(button => button.onclick = async () => { if (!confirm("确定解封这个用户吗？")) return; try { await api.unbanUser(button.dataset.ownerUnban); await Promise.all([renderOwnerBans(), renderAdminUsers(), renderModerationEvents()]); toast("用户已解封"); } catch (error) { toast(error.message, "error"); } });
+  } catch (error) { $("#ownerBanList").innerHTML = `<div class="empty-list">${esc(error.message)}</div>`; }
+}
+async function renderAdminContent() {
+  const table = $("#adminContentType").value, labels = { posts:"博客", post_comments:"文章评论", station_comments:"工作站留言", plans:"计划", templates:"模板" };
+  try {
+    const data = await api.fetchAdminContent(table);
+    $("#adminContentList").innerHTML = data.length ? data.map(item => { const owner = adminUsersCache.find(v => v.id === item.user_id), preview = item.title || item.content || item.code || JSON.stringify(item.data || ""); const canDelete = owner && owner.role !== "owner" && (api.cloud.profile.role === "owner" || owner.role === "user"); return `<article class="admin-row"><div><span><b>${labels[table]} · ${esc(owner?.display_name || item.user_id)}</b><small>${esc(String(preview).slice(0,180))}</small></span></div>${canDelete ? `<button class="admin-delete-content" data-id="${item.id}">删除</button>` : ""}</article>`; }).join("") : '<div class="empty-list">暂无内容</div>';
+    $$(".admin-delete-content", $("#adminContentList")).forEach(button => button.onclick = async () => { if (!confirm("确定删除这条内容吗？该操作不可撤销。")) return; try { await api.deleteAdminContent(table, button.dataset.id); await renderAdminContent(); await reloadCloudContent(); toast("内容已删除"); } catch (error) { toast(error.message,"error"); } });
+  } catch (error) { $("#adminContentList").innerHTML = `<div class="empty-list">${esc(error.message)}</div>`; }
+}
+async function renderModerationEvents() {
+  try { const data = await api.fetchModerationEvents(); $("#moderationEventList").innerHTML = data.length ? data.map(item => `<article class="audit-row"><span>${nowText(Date.parse(item.created_at))}</span><b>${esc(item.source_table)}</b><p>${esc(item.reason)}</p><code>${esc(item.user_id || "未知用户")}</code></article>`).join("") : '<div class="empty-list">暂无审核记录</div>'; }
+  catch (error) { $("#moderationEventList").innerHTML = `<div class="empty-list">${esc(error.message)}</div>`; }
+}
+async function renderAdmin() {
+  const allowed = isStaff(); $("#adminDenied").classList.toggle("hidden", allowed); $("#adminConsole").classList.toggle("hidden", !allowed); if (!allowed) return;
+  $("#adminRoleBadge").textContent = api.cloud.profile.role === "owner" ? "站长 · 最高权限" : "管理员";
+  await renderAdminUsers(); await Promise.all([renderAvatarRequests(), renderOwnerBans(), renderAdminContent(), renderModerationEvents()]);
+}
+$("#adminUserSearch").oninput = () => { clearTimeout(leaderboardTimer); leaderboardTimer = setTimeout(renderAdminUsers, 260); };
+$("#adminContentType").onchange = renderAdminContent; $("#refreshAdminBtn").onclick = renderAdmin;
+
+async function onCloudAuthChange(event) {
+  applyAuthState();
+  await reloadCloudContent();
+  if (hasWriteAccess()) await Promise.all([loadCloudVault(), loadCloudPlan()]);
+  else { vault.data = null; $("#vaultWorkspace").classList.add("hidden"); $("#vaultGate").classList.remove("hidden"); roadmap.levels = []; renderRoadmap(); }
+  if (event === "PASSWORD_RECOVERY") { location.hash = "account"; toast("请在个人中心设置新密码"); }
+  route();
+}
+
+loadBlogData(); loadRoadmap(); renderMyBlogs(); renderSquare(); renderStationComments();
+api.initCloud(onCloudAuthChange).catch(error => { toast(error.message, "error"); api.cloud.authReady = true; applyAuthState(); route(); });
 
 window.addEventListener("beforeunload", e => { if (isEditorDirty() || isBlogDirty()) { e.preventDefault(); e.returnValue = ""; } });
