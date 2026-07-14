@@ -1167,6 +1167,25 @@ async function onCloudAuthChange(event) {
   route();
 }
 
+function initVisualEffects() {
+  const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const items = $$(".hero-copy,.hero-visual,.section-heading,.feature-card,.principles");
+  if (!reduced && "IntersectionObserver" in window) {
+    items.forEach((item, i) => { item.classList.add("reveal"); if (item.classList.contains("feature-card")) item.style.transitionDelay = `${(i % 3) * 70}ms`; });
+    const observer = new IntersectionObserver(entries => entries.forEach(entry => { if (entry.isIntersecting) { entry.target.classList.add("is-visible"); observer.unobserve(entry.target); } }), { threshold: .12, rootMargin: "0px 0px -30px" });
+    items.forEach(item => observer.observe(item));
+  } else items.forEach(item => item.classList.add("is-visible"));
+  const visual = $(".hero-visual"), code = $(".code-window");
+  if (!reduced && matchMedia("(hover: hover)").matches && visual && code) {
+    visual.addEventListener("pointermove", event => {
+      const rect = visual.getBoundingClientRect(), x = (event.clientX - rect.left) / rect.width - .5, y = (event.clientY - rect.top) / rect.height - .5;
+      code.style.setProperty("--tilt-x", `${(-y * 4).toFixed(2)}deg`); code.style.setProperty("--tilt-y", `${(x * 5).toFixed(2)}deg`);
+    });
+    visual.addEventListener("pointerleave", () => { code.style.setProperty("--tilt-x", "0deg"); code.style.setProperty("--tilt-y", "0deg"); });
+  }
+}
+
+initVisualEffects();
 loadBlogData(); loadRoadmap(); renderMyBlogs(); renderSquare(); renderStationComments();
 api.initCloud(onCloudAuthChange).catch(error => { toast(error.message, "error"); api.cloud.authReady = true; applyAuthState(); route(); });
 

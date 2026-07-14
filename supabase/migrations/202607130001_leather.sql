@@ -26,6 +26,7 @@ create table if not exists public.profiles (
   constraint profiles_bio_length check (char_length(bio) <= 300),
   constraint profiles_avatar_url check (avatar_url is null or (char_length(avatar_url) <= 500 and avatar_url ~ '^https://'))
 );
+alter table public.profiles alter column display_name set default 'Leather 用户';
 create unique index if not exists profiles_handle_lower_uidx on public.profiles(lower(handle));
 create index if not exists profiles_role_idx on public.profiles(role);
 create index if not exists profiles_banned_idx on public.profiles(banned_at) where banned_at is not null;
@@ -171,6 +172,7 @@ create table if not exists public.plans (
   constraint plans_title_length check (char_length(title) between 1 and 60),
   constraint plans_data_size check (octet_length(data::text) <= 200000)
 );
+alter table public.plans alter column title set default '我的训练计划';
 
 create table if not exists public.daily_checkins (
   id uuid primary key default gen_random_uuid(),
@@ -393,7 +395,7 @@ begin
   select * into v_row from public.daily_checkins where user_id = v_user and checkin_date = v_day;
   if found then return v_row; end if;
   loop
-    v_bytes := gen_random_bytes(4);
+    v_bytes := extensions.gen_random_bytes(4);
     v_raw := get_byte(v_bytes,0)::bigint * 16777216 + get_byte(v_bytes,1)::bigint * 65536 + get_byte(v_bytes,2)::bigint * 256 + get_byte(v_bytes,3)::bigint;
     exit when v_raw < 4294000000; -- rejection sampling avoids modulo bias
   end loop;

@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node tests/static-check.mjs && vite build"
+    "test": "node tests/static-check.mjs && vite build",
+    "test:remote": "node tests/remote-check.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.110.3"

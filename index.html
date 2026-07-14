@@ -77,13 +77,13 @@
 
         <div class="section-heading">
           <div><span class="eyebrow">ONE DESK, FIVE TOOLS</span><h2>为训练中的真实痛点而做</h2></div>
-          <p>没有帐号体系，没有云端依赖。打开网页，就能继续上次的工作。</p>
+          <p>登录后按账号同步模板、计划与文章；公开内容仍可直接阅读。</p>
         </div>
         <div class="feature-grid">
           <a class="feature-card tone-green" href="#vault">
             <span class="feature-no">01</span><div class="feature-icon">{ }</div>
-            <h3>加密模板库</h3><p>用关键字和密码开启独立空间。分区、标签页、标签与语言筛选，让板子真正好找。</p>
-            <ul><li>AES-GCM 本地加密</li><li>保存即生成版本快照</li><li>逐行查看代码差异</li></ul><b class="card-link">打开模板库 →</b>
+            <h3>账号模板库</h3><p>登录即进入自己的模板空间。分区、标签与语言筛选，让板子真正好找。</p>
+            <ul><li>Supabase RLS 账号隔离</li><li>保存即生成版本快照</li><li>逐行查看代码差异</li></ul><b class="card-link">打开模板库 →</b>
           </a>
           <a class="feature-card tone-orange" href="#stress">
             <span class="feature-no">02</span><div class="feature-icon">A ≟ B</div>
@@ -110,9 +110,9 @@
         <div class="principles">
           <div><span class="eyebrow">WHY LEATHER</span><h2>克制，但足够耐用。</h2></div>
           <div class="principle-list">
-            <article><b>01</b><div><h3>数据归你</h3><p>模板经密码派生密钥加密后才写入 localStorage，源码不会发送到服务器。</p></div></article>
-            <article><b>02</b><div><h3>部署简单</h3><p>全部由 HTML、CSS 和 JavaScript 组成，GitHub Pages 可以免费托管，不需要维护后端。</p></div></article>
-            <article><b>03</b><div><h3>面向训练流程</h3><p>不追求成为又一个在线 IDE，只把模板沉淀、正确性验证和训练规划三件事做好。</p></div></article>
+            <article><b>01</b><div><h3>账号隔离</h3><p>模板、私有文章和计划由数据库 RLS 隔离，其他普通用户无法读取。</p></div></article>
+            <article><b>02</b><div><h3>部署清晰</h3><p>前端由 GitHub Pages 托管，账号和数据由 Supabase 管理，构建过程不携带服务端密钥。</p></div></article>
+            <article><b>03</b><div><h3>安全边界</h3><p>前端负责即时提示，数据库触发器负责最终审核、硬删除、封禁和审计。</p></div></article>
           </div>
         </div>
       </section>
@@ -120,9 +120,9 @@
       <section class="page" id="page-vault" data-title="模板库">
         <div id="vaultGate" class="gate-wrap">
           <div class="gate-info">
-            <span class="eyebrow">ENCRYPTED CODE VAULT</span>
-            <h1>你的算法模板，<br>只用一把钥匙打开。</h1>
-            <p>关键字用于定位独立代码库，密码只在本次打开期间保留于内存。Leather 不会保存明文密码，也无法替你找回密码。</p>
+            <span class="eyebrow">OFFLINE COMPATIBILITY MODE</span>
+            <h1>离线模板库，<br>仍由本机密码保护。</h1>
+            <p>这里只在 Supabase 未配置时作为兼容模式出现。正式账号模式会直接加载云端模板，不要求单独设置模板密码。</p>
             <div class="security-note"><span>⌾</span><div><b>浏览器原生加密</b><small>PBKDF2 派生密钥 · AES-256-GCM 验证与加密</small></div></div>
           </div>
           <form class="gate-card" id="vaultForm">

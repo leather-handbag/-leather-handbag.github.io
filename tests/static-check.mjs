@@ -8,7 +8,12 @@ const pkg = JSON.parse(read("package.json"));
 
 assert.equal(pkg.dependencies["@supabase/supabase-js"], "2.110.3", "Supabase SDK version missing");
 assert.match(ignore, /^\.env$/m); assert.match(ignore, /^\.env\.\*$/m); assert.match(ignore, /^!\.env\.example$/m);
-assert(!existsSync(new URL("../.env", import.meta.url)), ".env must not exist in the repository workspace");
+if (existsSync(new URL("../.env", import.meta.url))) {
+  const env = read(".env");
+  assert.match(env, /^VITE_SUPABASE_URL=https:\/\/.+\.supabase\.co$/m);
+  assert.match(env, /^VITE_SUPABASE_ANON_KEY=\S+$/m);
+  assert(!/service_role/i.test(env), "Local frontend env must never contain service_role");
+}
 assert(!/service_role/i.test(client + cloud + app), "Frontend source must never contain service_role");
 assert.match(workflow, /VITE_SUPABASE_URL: \$\{\{ secrets\.VITE_SUPABASE_URL \}\}/);
 assert.match(workflow, /VITE_SUPABASE_ANON_KEY: \$\{\{ secrets\.VITE_SUPABASE_ANON_KEY \}\}/);

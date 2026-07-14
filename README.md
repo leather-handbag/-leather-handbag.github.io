@@ -4,7 +4,7 @@ Leather 是面向信息学竞赛训练的账号型工作站。访客可以阅读
 
 ## 功能
 
-- Supabase 邮箱密码与 GitHub OAuth 登录，支持头像、名字、唯一 ID、简介和修改密码。
+- Supabase 邮箱密码与 GitHub OAuth 登录，支持经管理员审核的头像、名字、唯一 ID、简介和修改密码。
 - 模板分区、标签、版本快照和 Diff；模板按账号存储，不再要求单独的模板密码。
 - JavaScript 在线对拍与 C++14 PowerShell 对拍脚本。
 - 云端分层任务导图。
@@ -14,7 +14,7 @@ Leather 是面向信息学竞赛训练的账号型工作站。访客可以阅读
 
 ## 本地启动
 
-要求 Node.js 22.12 或更高版本。
+要求 Node.js 22.12 或更高版本。本机 Node 位于 `D:\node.exe`，npm 位于 `D:\npm.cmd`；若没有加入 PATH，可把下列 `npm` 替换为 `D:\npm.cmd`。
 
 ```bash
 npm install
@@ -42,6 +42,14 @@ npm run build
 npm run preview
 ```
 
+本地静态检查与生产构建验证：
+
+```bash
+npm test
+```
+
+真实远端权限回归脚本位于 `tests/remote-check.mjs`。它需要临时注入管理访问令牌和 `service_role`，只应由项目所有者在受控终端运行，绝不能把这些值写入前端环境变量。
+
 ## 认证配置
 
 1. Supabase Authentication → URL Configuration：Site URL 填线上 GitHub Pages 地址。
@@ -49,6 +57,8 @@ npm run preview
 3. 邮箱登录建议开启 Confirm email，并配置正式 SMTP。
 4. GitHub 登录需要在 GitHub 创建 OAuth App，再把 Client ID/Secret 填入 Supabase Authentication → Providers → GitHub。
 5. 建议在 Supabase 开启 CAPTCHA、泄漏密码检查和合理的 Auth/API Rate Limits。
+
+当前项目已配置线上、本地回调地址和最短 8 位密码。GitHub Provider、正式 SMTP 与 CAPTCHA 仍需要你自己的第三方凭据，具体地址见 [SUPABASE_SETUP_REPORT.md](SUPABASE_SETUP_REPORT.md)。
 
 ## 绑定站长
 
@@ -80,8 +90,8 @@ where id = 'YOUR_AUTH_UUID';
 
 - 未登录用户只能读取公开文章、安全公开资料和排行榜。
 - 作者只能新增、修改或删除自己的博客、评论、模板和计划。
-- 管理员可以查看所有博客、模板和计划，可以删除普通用户内容、封禁普通用户，但不能解封或操作站长/其他管理员。
-- 站长可以封禁、解封、授权管理员和解除管理员；任何人都不能通过前端修改自己的角色或封禁状态。
+- 管理员可以查看所有博客、模板和计划，可以删除普通用户内容、封禁普通用户并审核普通用户头像，但不能解封或操作站长/其他管理员。
+- 站长可以查看带原因的专属封禁列表、解封、审核全部头像、授权管理员和解除管理员；任何人都不能通过前端修改自己的角色、封禁状态或已批准头像。
 - 名字颜色：负分灰、0–4 蓝、5–9 绿、10–29 橙、30 以上红；管理员和站长固定紫色。
 - 签到日 +5 分；已经结束且漏签的日期 -1 分。分数由签到记录实时计算，不依赖定时任务。
 

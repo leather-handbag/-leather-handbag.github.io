@@ -1,76 +1,80 @@
-# Supabase 配置、未完成项与风险报告
+# Supabase 配置、验收与剩余人工项
 
-## 当前完成情况
+## 已完成
 
-- 已安装 `@supabase/supabase-js` 2.110.3 和 Vite 8.1.4，并生成 `package-lock.json`。
-- 已配置 `.env.example`、`.gitignore`、Vite 构建和 GitHub Pages Actions 环境变量注入。
-- 已实现邮箱注册/登录、GitHub OAuth、密码重置/修改、退出登录、头像、名字、唯一 ID 和个人简介。
-- 已把博客、两类评论、模板、版本快照和任务计划接到 Supabase SDK 数据层。
-- 已实现每日签到、无模偏的安全随机六位数、稀有度、实时等级分、个人主页、排行榜和用户搜索。
-- 已实现站长/管理员后台：用户封禁/解封/授权、全站内容查看/删除和审核记录。
-- 已编写数据库迁移 [202607130001_leather.sql](supabase/migrations/202607130001_leather.sql)，包含表、索引、外键、RLS、Storage、审核、配额、签到和管理 RPC。
+- 已安装 `@supabase/supabase-js` 2.110.3 与 Vite 8.1.4，并使用 `D:\node.exe` / `D:\npm.cmd` 完成安装、测试和构建。
+- 已创建本地 `.env`，写入项目 URL 与 publishable key；`.env` 已被 `.gitignore` 排除，前端和仓库中没有 `service_role`。
+- 已将 [202607130001_leather.sql](supabase/migrations/202607130001_leather.sql) 实际应用到 `leather-handbag's Project`（项目引用 `gizauzokmalddnkjdgxw`）。
+- 已验证 10 张业务表全部启用 RLS，匿名和登录角色均不能直接读取 `profiles` 敏感列。
+- 已部署博客、文章评论、工作站留言、模板、快照、计划、签到、排行榜、管理员 RPC、封禁审计和敏感词审核。
+- 已部署头像申请表与审批 RPC。用户只能提交候选头像，普通管理员只能审核普通用户，站长可审核全部；未审批头像不能写入公开资料。
+- 已部署仅站长可调用的封禁列表 RPC，保存封禁时间和原因；普通管理员不能读取或解封。
+- 已修复 Windows 管理 API 请求导致的中文 SQL 编码问题。远端现有 60 条敏感词、0 条乱码，7 个分类计数正确。
+- 已把 Auth Site URL 设为 `https://leather-handbag.github.io/LeatherSS/`，并加入线上、本地 5173 与预览 4173 回调白名单。
+- 已把 Auth 最短密码提高到 8 位。当前基础限流为邮件 2、验证 30、OTP 30、令牌刷新 150。
+- 已完成四角色远端回归：访客、普通用户、管理员、站长。13 组权限与业务检查全部通过，临时账号、头像和无主审计记录已清理为 0。
+- 已完成桌面和窄屏界面截图验收，加入响应式修复、状态色、进入动效、代码窗指针反馈及 `prefers-reduced-motion` 降级。
 
-## 当前唯一的远端阻塞
+## 仍需你本人完成
 
-本机 Codex 配置中已经存在名为 `supabase` 的 MCP，但本次会话握手返回 `Auth required`，工具没有成功暴露。因此以下远端操作尚未执行：
+### 1. 注册并绑定站长
 
-1. 没有把迁移实际应用到你的 Supabase 项目。
-2. 没有读取你的 Project URL/publishable key，因此没有创建真实 `.env`。
-3. 没有替你配置 Auth Site URL、Redirect URLs、GitHub Provider、SMTP、CAPTCHA 和限流。
-4. 没有你的 Auth UUID，因此不能安全绑定 `leather-handbag` 站长身份。
+当前 Auth 中没有你的真实账号，因此无法判断哪个 UUID 属于你。请先在网页注册并登录，再到 Supabase Authentication -> Users 复制自己的 UUID，执行：
 
-此外，这台电脑当前没有系统级 Node/npm。本次使用临时 Node LTS 完成了 SDK 安装、`npm ci`、测试和构建，临时运行时已清理；你后续本地开发前需要安装 Node.js 22.12 或更高版本。
+```sql
+update public.profiles
+set role = 'owner',
+    handle = 'leather-handbag',
+    display_name = 'leather-handbag',
+    updated_at = now()
+where id = 'YOUR_AUTH_UUID';
+```
 
-请在 Codex 的 MCP 管理界面重新完成 Supabase 授权并重开会话，再让我继续执行；也可以按 README 在 Supabase Dashboard 手动完成。不要把任何密钥发在博客、评论或公开聊天中。
+必须确认只更新一行，且 UUID 确实属于你的账号。不能只凭名字自动授予站长权限。
 
-## 必须由你确认的上线清单
+### 2. 配置 GitHub OAuth
 
-1. 应用数据库迁移，检查 SQL Editor 无报错。
-2. 注册你自己的账号，复制 Auth UUID，执行 README 中的站长绑定 SQL，并确认恰好更新一行。
-3. 配置邮箱验证和 GitHub OAuth 回调地址；本地与线上地址都要加入允许列表。
-4. GitHub Actions 添加两个 `VITE_` Secrets，Pages Source 选择 GitHub Actions。
-5. 在 Supabase Security Advisor 检查所有公开表 RLS 已开启。
-6. 使用访客、普通用户、管理员、站长四种账号逐项验收权限。
-7. 上线前备份数据库并设置日志/容量告警。
+GitHub Provider 代码已完成，但远端 Provider 仍关闭，因为缺少你创建的 GitHub OAuth Client ID/Secret。请在 GitHub 创建 OAuth App：
 
-## 对你不利或容易被忽略的风险
+- Homepage URL：`https://leather-handbag.github.io/LeatherSS/`
+- Authorization callback URL：`https://gizauzokmalddnkjdgxw.supabase.co/auth/v1/callback`
 
-### 1. 仅凭名字认定站长会被抢注
+然后把 Client ID/Secret 填到 Supabase Authentication -> Providers -> GitHub。不要把 Secret 写进 `.env` 或聊天。
 
-如果系统看到 `leather-handbag` 就授予最高权限，第一个抢注该名字的人就能夺取全站。当前实现把该 ID 设为保留，并要求你用 Auth UUID 在 SQL Editor 手动绑定。不要把“拥有这个名字”改回权限判断条件。
+### 3. 配置 SMTP 与 CAPTCHA
 
-### 2. 永久自动封禁很容易误伤
+当前项目没有正式 SMTP，也没有 CAPTCHA Provider 凭据。请在 Supabase Auth 中配置自己的 SMTP；若启用 CAPTCHA，需要先在 Turnstile 或 hCaptcha 创建站点并填入对应 Secret。默认邮件服务有严格额度，不能作为正式生产邮件通道。
 
-题解、模板代码或安全研究文章可能只是引用敏感词，却会被当作违规。当前按照要求采用强硬策略：服务端删除内容并停止账号写入，只有站长可以解封。词库每次修改前都应先在测试项目回归；建议长期方案改为“高置信度立即封禁，低置信度隔离待审”。
+### 4. 配置 GitHub Pages
 
-### 3. 硬删除无法恢复
+在 GitHub 仓库 Settings -> Secrets and variables -> Actions 添加：
 
-管理员删除和自动审核会保留审计元数据，但不会保留正文。误删文章、模板或计划后无法从后台恢复，这会直接损害用户和站长信誉。更安全的生产设计是隔离表/软删除加保留期；当前硬删除是为了符合“立即自动删除”的要求。
+- `VITE_SUPABASE_URL=https://gizauzokmalddnkjdgxw.supabase.co`
+- `VITE_SUPABASE_ANON_KEY`：填写当前项目的 publishable key
 
-### 4. 管理员能看到私有数据
+随后在 Settings -> Pages 把 Source 设为 GitHub Actions。仓库已包含部署工作流。
 
-按要求，管理员能读取所有私有博客、模板和计划。这意味着管理员能看到未公开题解、私人训练计划和代码资产，带来隐私、保密与内部滥用责任。当前限制管理员不能处理站长或其他管理员，并记录管理删除，但“查看”本身仍无法避免泄露。只应授权高度可信的人。
+### 5. 泄漏密码检查的套餐限制
 
-### 5. 管理员操作也可能造成不可逆损失
+已尝试启用 HaveIBeenPwned 泄漏密码检查，Supabase 返回 HTTP 402：该功能仅 Pro 及以上套餐可用。当前仍有最短 8 位密码和 Auth 限流，但免费套餐无法启用此检查。
 
-管理员能封禁普通用户并硬删除普通用户内容，不能自行解封。恶意或误操作管理员仍可能造成大规模损失；站长虽然能解除其权限和解封用户，却无法恢复被删除正文。建议增加二次确认、每日操作上限和可恢复回收站。
+## 已通过的远端验收
 
-### 6. 当前是应用层封禁，不是 Auth 层彻底禁用
+- 访客只能读取公开文章和公开资料。
+- 其他普通用户不能读取私有文章，也不能给私有文章评论。
+- 管理员可读取全部业务内容、封禁普通用户和审核普通用户头像。
+- 管理员不能封禁站长、不能解封、不能读取站长封禁列表。
+- 站长可查看封禁原因、解封、授权和解除管理员。
+- 敏感内容会被硬删除，账号会被应用层封禁，站长可解封。
+- 签到每日幂等，安全随机函数已限定到 Supabase 的 `extensions.gen_random_bytes`。
+- 头像只有审核通过后才进入 `profiles.avatar_url`。
+- 测试结束后 Auth 测试用户、测试资料、头像对象和无主审计记录均为 0。
 
-封禁状态保存在 `profiles`，所有写策略和 RPC 都会拒绝封禁用户，因此其账号只能继续读取公开内容；用户仍可能保持 Supabase Auth 登录会话。若要求在 Auth 层也禁止登录，需要额外部署持有 `service_role` 的 Edge Function/数据库 Webhook。`service_role` 绝不能进入前端。
+## 仍然存在的生产风险
 
-### 7. 图片无法靠敏感词词库审核
-
-头像桶限制 2 MB 和图片 MIME 类型，但没有色情、暴恐、二维码广告或恶意文件内容识别。生产环境需要图片审核服务、病毒扫描和人工举报入口；只检查扩展名/MIME 不足以保证安全。
-
-### 8. 前端和单项目限流不是完整抗攻击系统
-
-数据库会限制单账号写入频率、数量、文本长度和垃圾链接，对拍也有 Worker 超时，但分布式注册、撞库、验证码绕过和流量攻击仍需 Supabase Auth Rate Limits、CAPTCHA、WAF/CDN 和监控处理。
-
-### 9. 公开 publishable/anon key 不是秘密
-
-Vite 会把 `VITE_SUPABASE_ANON_KEY` 打进浏览器 bundle，这是正常设计；真正的安全来自 RLS。不要误把 `service_role` 当作 anon key，也不要因为 key 可见就关闭 RLS。
-
-### 10. 旧本地数据不会自动迁移
-
-旧版博客、计划和加密模板仍可能留在浏览器 `localStorage`。系统不会自动上传，以免错误公开私有草稿或让旧内容触发自动封禁。需要迁移时应先备份、人工检查，再做一次性导入。
+1. 自动硬删除和永久封禁可能误伤引用敏感词的题解或安全研究内容；当前实现严格遵循要求，误伤只能由站长解封，正文无法恢复。
+2. 管理员按要求能读取私有博客、模板和计划，应只授权高度可信人员。
+3. 待审核头像位于公开 Storage bucket，随机路径很难猜测，但知道完整 URL 的人仍可直接访问；真正的图片内容识别仍需第三方审核或人工审核。
+4. 应用层封禁会阻止所有写入，但不会删除 Supabase Auth 会话；Auth 层彻底禁用需要服务端 Edge Function，`service_role` 绝不能进入前端。
+5. CAPTCHA、正式 SMTP、WAF/CDN、备份和告警仍是上线安全的一部分，不能仅依赖前端敏感词检查和单账号数据库限流。
+6. 旧版 `localStorage` 数据不会自动上传，避免把旧草稿误公开或触发自动封禁；迁移前应先备份并人工检查。
