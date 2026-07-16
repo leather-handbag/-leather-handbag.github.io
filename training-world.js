@@ -173,7 +173,8 @@ export function createTrainingWorld({ api, $, $$, esc, toast, nowText, openModal
   }
 
   function renderLogs(logs) {
-    $("#trainingLogList").innerHTML = logs.length ? logs.map(log => `<article><i>${log.type === "map_unlocked" ? "✦" : log.type === "binding" ? "⛓" : "⌁"}</i><div><b>${esc(log.title)}</b><p>${esc(log.message)}</p><small>${nowText(Date.parse(log.created_at))}</small></div></article>`).join("") : '<div class="training-empty">绑定平台后，重要的远征事件会记录在这里。</div>';
+    $("#trainingLogList").innerHTML = logs.length ? logs.map(log => `<article class="${log.type==='map_unlocked'?'replayable':''}" ${log.type==='map_unlocked'?`data-replay-unlock="${esc(log.detail?.map||'')}"`:''}><i>${log.type === "map_unlocked" ? "✦" : log.type === "binding" ? "⛓" : log.type === "guardian" ? "◇" : "⌁"}</i><div><b>${esc(log.title)}</b><p>${esc(log.message)}</p><small>${nowText(Date.parse(log.created_at))}${log.type==='map_unlocked'?' · 点击重播':''}</small></div></article>`).join("") : '<div class="training-empty">绑定平台后，重要的远征事件会记录在这里。</div>';
+    $$('[data-replay-unlock]',$("#trainingLogList")).forEach(item=>item.onclick=()=>{const code=item.dataset.replayUnlock;const map=(state.dashboard?.maps||[]).find(value=>value.code===code);if(map)state.game?.playUnlock({map_code:code,reason:map.unlock_reason,unlocked_at:map.unlocked_at},true);});
   }
 
   async function loadHeatmap() {
@@ -197,7 +198,7 @@ export function createTrainingWorld({ api, $, $$, esc, toast, nowText, openModal
   }
 
   async function loadRecommendations() {
-    try { const rows=await api.fetchTrainingRecommendations(3);$("#trainingRecommendationList").innerHTML=rows.length?rows.map(row=>{const map=(state.dashboard?.maps||[]).find(item=>item.code===row.map_code);const region=map?.regions?.find(item=>item.code===row.region_code);return `<article class="quest-card"><span>${esc(slotText(row.slot))}</span><h3>${esc(row.title)}</h3><p>${esc(row.reason)}</p><small class="quest-route">${esc(map?.name||row.map_code||"探索地图")} · ${esc(region?.name||"随机探索")}</small><div><small>${esc(platformMeta[row.platform]?.name||row.platform)} · ${row.difficulty??"难度未知"}</small><a class="btn primary small" href="${esc(row.url)}" target="_blank" rel="noopener noreferrer">出发</a><button class="text-btn" data-skip-rec="${row.id}" type="button">暂不想做</button></div></article>`;}).join(""):'<div class="training-empty">题目目录与可靠标签积累后，将生成三条个性化路线。</div>';$$('[data-skip-rec]').forEach(button=>button.onclick=async()=>{await api.skipTrainingRecommendation(button.dataset.skipRec);button.closest('article')?.remove();toast("已跳过，七天内不会再次推荐");}); }
+    try { const rows=await api.fetchTrainingRecommendations(3);state.recommendations=rows;$("#trainingRecommendationList").innerHTML=rows.length?rows.map(row=>{const map=(state.dashboard?.maps||[]).find(item=>item.code===row.map_code);const region=map?.regions?.find(item=>item.code===row.region_code);return `<article class="quest-card ${esc(row.status||'available')}"><span>${row.status==='completed'?'已完成':esc(slotText(row.slot))}</span><h3>${esc(row.title)}</h3><p>${esc(row.reason)}</p><small class="quest-route">${esc(map?.name||row.map_code||"探索地图")} · ${esc(region?.name||"随机探索")}</small><div><small>${esc(platformMeta[row.platform]?.name||row.platform)} · ${row.difficulty??"难度未知"}</small><a class="btn primary small" href="${esc(row.url)}" target="_blank" rel="noopener noreferrer">${row.status==='completed'?'查看':'出发'}</a>${row.status==='available'?`<button class="text-btn" data-skip-rec="${row.id}" type="button">暂不想做</button>`:''}</div></article>`;}).join(""):'<div class="training-empty">题目目录与可靠标签积累后，将生成三条个性化路线。</div>';$$('[data-skip-rec]').forEach(button=>button.onclick=async()=>{await api.skipTrainingRecommendation(button.dataset.skipRec);toast("已跳过，七天内不会再次推荐");await loadRecommendations();state.game?.setData(state.dashboard,state.recommendations);});return rows; }
     catch(error){$("#trainingRecommendationList").innerHTML=`<div class="training-empty">${esc(error.message)}</div>`;}
   }
 
@@ -282,6 +283,12 @@ export function createTrainingWorld({ api, $, $$, esc, toast, nowText, openModal
     $("#trainingShareBtn").onclick=async()=>{const url=`${location.origin}${location.pathname}#training-world/${encodeURIComponent(state.targetId||api.cloud.user?.id||'')}`;try{await navigator.clipboard.writeText(url);toast("分享链接已复制");}catch{prompt("复制分享链接：",url);}};
     $("#trainingHeatmapRange").onchange=loadHeatmap;$("#trainingHeatmapPlatform").onchange=loadHeatmap;
     $("#trainingRerollBtn").onclick=async()=>{if(!state.own)return;try{await api.requestTrainingSync();toast("同步完成后会重新评估今日路线");}catch(error){toast(error.message,"error");}};
+    $("#trainingMapWorldBtn").onclick=()=>{closeRegionDrawer();state.game?.showWorld(true);renderGameMapHeader();};
+    $("#trainingMapZoomIn").onclick=()=>state.game?.zoomBy(1.22);$("#trainingMapZoomOut").onclick=()=>state.game?.zoomBy(.82);$("#trainingMapReset").onclick=()=>state.game?.resetCamera();
+    $("#trainingMapFullscreen").onclick=()=>state.game?.toggleFullscreen();$("#trainingMapSound").onclick=()=>{state.game?.setAudio(!state.game.audioEnabled);syncSoundButton();toast(state.game?.audioEnabled?'地图音效已开启':'地图音效已关闭');};
+    $("#trainingRegionDrawerClose").onclick=closeRegionDrawer;
+    $("#trainingGameStage").addEventListener('training-map-mode',event=>{renderGameMapHeader();if(event.detail.mode==='world')closeRegionDrawer();});
+    $("#trainingGameShell").addEventListener('keydown',event=>{if(event.key==='Escape')closeRegionDrawer();if(event.key==='+'||event.key==='=')state.game?.zoomBy(1.15);if(event.key==='-')state.game?.zoomBy(.87);if(event.key==='Home')state.game?.resetCamera();});
     $("#trainingPrivacyForm").onsubmit=async event=>{event.preventDefault();try{await api.updateTrainingPrivacy({accounts:$("#privacyAccountsPublic").checked,heatmap:$("#privacyHeatmapPublic").checked,map:$("#privacyMapPublic").checked,recent:$("#privacyRecentPublic").checked});toast("算法画像隐私设置已保存");await renderSettings();}catch(error){toast(error.message,"error");}};
   }
 
