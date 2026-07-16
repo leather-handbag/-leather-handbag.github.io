@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.22/dist/katex.min.css" integrity="sha384-5TcZemv2l/9On385z///+d7MSYlvIEw9FuZTIdZ14vJLqWphw7e7ZPuOiCHJcFCP" crossorigin="anonymous">
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="training-world.css">
+  <link rel="stylesheet" href="training-game-map.css">
 </head>
 <body>
   <div class="app-shell">
@@ -242,6 +243,33 @@
         </div>
         <div class="training-locked hidden" id="trainingLocked"><span>♙</span><h2>这位探险家隐藏了地图</h2><p>隐私设置阻止了算法画像的公开读取。</p></div>
         <div id="trainingDashboard">
+          <section class="game-map-shell" id="trainingGameShell" aria-label="可交互算法远征地图">
+            <div class="game-map-loading" id="trainingGameLoading"><span></span><b>正在绘制七域远征地图</b><small>装载地貌、据点与真实训练进度……</small></div>
+            <div class="game-map-stage" id="trainingGameStage"><div class="game-map-labels" id="trainingGameLabels"></div></div>
+            <div class="game-map-hud game-map-hud-top">
+              <button type="button" class="game-hud-btn" id="trainingMapWorldBtn" title="返回世界地图" aria-label="返回世界地图"><i data-lucide="map"></i></button>
+              <div class="game-map-location"><small id="trainingMapModeLabel">WORLD MAP</small><b id="trainingGameLocation">七域远征世界</b><span id="trainingGameProgress">选择已解锁领域开始远征</span></div>
+              <div class="game-map-stars"><i data-lucide="sparkles"></i><span><b id="trainingGameStars">0</b><small>地图星辉</small></span></div>
+            </div>
+            <div class="game-map-hud game-map-hud-tools" aria-label="地图工具">
+              <button type="button" class="game-hud-btn" id="trainingMapZoomIn" title="放大" aria-label="放大地图"><i data-lucide="zoom-in"></i></button>
+              <button type="button" class="game-hud-btn" id="trainingMapZoomOut" title="缩小" aria-label="缩小地图"><i data-lucide="zoom-out"></i></button>
+              <button type="button" class="game-hud-btn" id="trainingMapReset" title="镜头归位" aria-label="地图镜头归位"><i data-lucide="locate-fixed"></i></button>
+              <button type="button" class="game-hud-btn" id="trainingMapSound" title="开启音效" aria-label="切换地图音效" aria-pressed="false"><i data-lucide="volume-x"></i></button>
+              <button type="button" class="game-hud-btn" id="trainingMapFullscreen" title="全屏" aria-label="全屏地图"><i data-lucide="maximize"></i></button>
+            </div>
+            <nav class="game-map-index" id="trainingGameMapIndex" aria-label="七域地图索引"></nav>
+            <aside class="game-region-drawer" id="trainingRegionDrawer" aria-live="polite" aria-hidden="true">
+              <button type="button" class="game-drawer-close" id="trainingRegionDrawerClose" aria-label="关闭据点详情"><i data-lucide="x"></i></button>
+              <span class="eyebrow" id="trainingDrawerType">ALGORITHM OUTPOST</span><h2 id="trainingDrawerName">算法据点</h2>
+              <div class="game-drawer-progress"><span><i id="trainingDrawerProgressBar"></i></span><b id="trainingDrawerPercent">0%</b></div>
+              <p id="trainingDrawerExplanation">选择地图上的算法据点查看真实训练证据。</p>
+              <div class="game-drawer-evidence" id="trainingDrawerEvidence"></div>
+              <div class="game-drawer-quest hidden" id="trainingDrawerQuest"><small id="trainingDrawerQuestSlot">今日远征</small><h3 id="trainingDrawerQuestTitle"></h3><p id="trainingDrawerQuestReason"></p><div><a class="btn primary small" id="trainingDrawerQuestLink" target="_blank" rel="noopener noreferrer">前往题目</a><button class="text-btn" id="trainingDrawerQuestSkip" type="button">暂不想做</button></div></div>
+              <button type="button" class="btn ghost game-target-btn" id="trainingSetTargetBtn">设为当前目标</button>
+            </aside>
+            <div class="game-map-tip" id="trainingGameTip"><i data-lucide="mouse-pointer-2"></i><span>拖拽移动 · 滚轮或双指缩放 · 点击据点行进</span></div>
+          </section>
           <section class="expedition-hero" id="expeditionHero">
             <div class="expedition-avatar"><span id="expeditionCompass">⌁</span><small>手感温度</small><b id="trainingFreshness">0°</b></div>
             <div class="expedition-copy"><span class="eyebrow">EXPLORER STATUS</span><h2 id="trainingCurrentMap">等待第一份远征记录</h2><p id="trainingDataCaption">绑定竞赛平台后，系统会安全地在服务端读取公开提交元数据。</p><div class="source-pills" id="trainingSourcePills"></div></div>
@@ -250,9 +278,9 @@
 
           <section class="atlas-panel ability-estimate-panel"><div class="training-section-head"><div><span class="eyebrow">ABILITY ESTIMATE</span><h2>高难过题能力估计</h2></div><b id="trainingAbilityDirect">尚未触发能力直达</b></div><div class="ability-estimate-grid"><span><b id="trainingAbilityAverage">待计算</b>高难题均值</span><span><b id="trainingAbilitySample">0 / 0 道</b>样本 / 有难度 AC</span><span><b id="trainingAbilityMaximum">—</b>最高难度</span><span><b id="trainingAbilityRecent">—</b>近 90 天均值</span></div><p id="trainingAbilityNote">至少需要 5 道有标准难度的独立 AC 才能评估地图直达。</p></section>
 
-          <section class="atlas-panel"><div class="training-section-head"><div><span class="eyebrow">WORLD MAPS</span><h2>七域算法地图</h2></div><p>核心区域全部达到 100%，或高难过题均值达标后，地图永久开放。</p></div><div class="map-trail" id="trainingMapTrail" role="list"></div></section>
+          <section class="atlas-panel legacy-atlas"><div class="training-section-head"><div><span class="eyebrow">WORLD MAPS</span><h2>七域算法地图</h2></div><p>核心区域全部达到 100%，或高难过题均值达标后，地图永久开放。</p></div><div class="map-trail" id="trainingMapTrail" role="list"></div></section>
 
-          <div class="training-main-grid">
+          <div class="training-main-grid legacy-atlas">
             <section class="atlas-panel region-panel"><div class="training-section-head"><div><span class="eyebrow">ACTIVE MAP</span><h2 id="trainingActiveMapTitle">启程平原</h2></div><span class="model-badge" id="trainingModelBadge">模型 v1</span></div><div class="map-region-grid" id="trainingRegionGrid"></div></section>
             <aside class="atlas-panel recommendation-panel"><div class="training-section-head"><div><span class="eyebrow">TODAY'S QUEST</span><h2>今日远征</h2></div><button class="text-btn" id="trainingRerollBtn" type="button">换一批</button></div><div id="trainingRecommendationList" class="recommendation-list"></div></aside>
           </div>

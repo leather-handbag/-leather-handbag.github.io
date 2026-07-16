@@ -3,8 +3,11 @@ const platformMeta = {
   atcoder: { name: "AtCoder", icon: "AC", field: "Affiliation" },
 };
 
+let gameModulePromise;
+const loadGameModule = () => gameModulePromise ||= Promise.all([import("./training-game-map.js"), import("lucide")]);
+
 export function createTrainingWorld({ api, $, $$, esc, toast, nowText, openModal, avatarHtml }) {
-  const state = { dashboard: null, targetId: "", own: false, activeMap: "", heatmap: [], heatmapTarget: "", reports: [], initialized: false };
+  const state = { dashboard: null, targetId: "", own: false, activeMap: "", heatmap: [], heatmapTarget: "", reports: [], recommendations: [], game: null, selectedRegion: null, initialized: false };
 
   const dateKey = date => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai" }).format(date);
   const shortDate = value => new Intl.DateTimeFormat("zh-CN", { month: "2-digit", day: "2-digit" }).format(new Date(`${value}T12:00:00+08:00`));
@@ -13,7 +16,7 @@ export function createTrainingWorld({ api, $, $$, esc, toast, nowText, openModal
   const slotText = value => ({ weakness: "补短板", progress: "推地图", explore: "探遗迹" }[value] || value);
 
   function publicShape(profile) {
-    return { generated_at: profile.generated_at, model_version: profile.model_version, classification_coverage: 0, summary: profile.summary || {}, ability_estimate: profile.ability_estimate || {}, accounts: profile.accounts || [], maps: profile.maps || [], logs: [], privacy: {}, profile };
+    return { generated_at: profile.generated_at, model_version: profile.model_version, classification_coverage: 0, summary: profile.summary || {}, ability_estimate: profile.ability_estimate || {}, accounts: profile.accounts || [], maps: profile.maps || [], logs: [], privacy: {}, spectator_mode: true, profile };
   }
 
   async function renderWorld(targetId = "") {
@@ -38,7 +41,11 @@ export function createTrainingWorld({ api, $, $$, esc, toast, nowText, openModal
       state.dashboard = data;
       state.activeMap = pickActiveMap(data.maps || []);
       renderDashboard(data);
-      await Promise.allSettled([loadHeatmap(), renderExplorerRanking(), state.own ? loadRecommendations() : Promise.resolve(), state.own ? loadReports() : Promise.resolve()]);
+      const gameData = state.own ? data : await api.fetchTrainingMap(target);
+      Object.assign(data, { scene_version: gameData.scene_version, node_states: gameData.node_states || [], path_states: gameData.path_states || [], campfire_temperature: gameData.campfire_temperature, map_star_summary: gameData.map_star_summary || {}, spectator_mode: !state.own });
+      const tasks = [loadHeatmap(), renderExplorerRanking(), state.own ? loadRecommendations() : Promise.resolve([]), state.own ? loadReports() : Promise.resolve()];
+      await Promise.allSettled(tasks);
+      await renderGameMap(data);
     } catch (error) { locked("地图暂时无法展开", error.message); }
   }
 
@@ -92,6 +99,62 @@ export function createTrainingWorld({ api, $, $$, esc, toast, nowText, openModal
     const regions = map.regions || [];
     $("#trainingRegionGrid").innerHTML = regions.map(region => `<article class="map-region ${region.core ? "core" : "relic"} assessment-${esc(region.assessment)}" tabindex="0" title="${esc(region.explanation)}"><div class="region-orb" style="--region-p:${Number(region.percent || 0)};--region-color:${esc(map.color)}"><span>${esc(region.icon)}</span></div><div><div class="region-name"><h3>${esc(region.name)}</h3><b>${Number(region.percent || 0)}%</b></div><p>${esc(region.explanation || region.description)}</p><div class="region-evidence"><span>证据 ${Number(region.evidence || 0).toFixed(1)} / ${Number(region.evidence_target || 0)}</span><span>上段 ${Number(region.upper_evidence || 0).toFixed(1)} / ${Number(region.upper_target || 0)}</span><span>子技能 ${Number(region.covered_skills || 0)} / ${Number(region.required_skills || 0)}</span><span>训练日 ${Number(region.active_days || 0)} / ${Number(region.required_days || 4)}</span></div><footer><span class="confidence confidence-${esc(region.confidence)}">${esc(region.confidence === "high" ? "高置信" : region.confidence === "medium" ? "中置信" : "低置信")}</span><span>${Number(region.solved || 0)} 道有效 AC</span><span>${region.core ? "核心区域" : "遗迹区域"}</span></footer></div></article>`).join("") || '<div class="training-empty">这张地图还没有区域配置。</div>';
   }
+
+  async function renderGameMap(data) {
+    const shell = $("#trainingGameShell"), stage = $("#trainingGameStage"), labels = $("#trainingGameLabels");
+    if (!shell || !stage || !labels) return;
+    try {
+      const [{ createTrainingGameMap }, lucide] = await loadGameModule();
+      lucide.createIcons({ icons: lucide.icons });
+      state.game?.destroy?.();state.game = await createTrainingGameMap({
+        host: stage,labelLayer: labels,dashboard: data,recommendations: state.recommendations,own: state.own,activeMap: state.activeMap,
+        onMapChange: (code,map) => { state.activeMap=code;renderGameMapHeader(map);renderRegions(map);renderRadar(data.maps||[]); },
+        onRegionSelect: openRegionDrawer,
+        onLockedMap: map => toast(`${map?.name||'这张地图'}仍被迷雾封锁。完成前置核心据点，或达到能力直达门槛后永久开启。`),
+        onStateChange: persistGameState
+      });
+      $("#trainingDashboard").classList.remove("game-map-fallback");$("#trainingDashboard").classList.add("game-map-enabled");
+      renderGameMapIndex(data.maps||[]);renderGameMapHeader();syncSoundButton();
+      const first=(data.unseen_unlock_events||[]).find(item=>item.map_code!=="plains");
+      if(first&&state.own){await state.game.playUnlock(first);await api.markTrainingUnlockSeen(first.event_id);data.unseen_unlock_events=data.unseen_unlock_events.filter(item=>item.event_id!==first.event_id);}
+    } catch(error) {
+      console.error("Game map fallback:",error);state.game?.destroy?.();state.game=null;
+      $("#trainingDashboard").classList.remove("game-map-enabled");$("#trainingDashboard").classList.add("game-map-fallback");
+      const loading=$("#trainingGameLoading");if(loading)loading.innerHTML=`<b>游戏地图暂时无法载入</b><small>${esc(error.message)} · 已切换完整图册模式</small>`;
+    }
+  }
+
+  function renderGameMapIndex(maps) {
+    const box=$("#trainingGameMapIndex");if(!box)return;
+    box.innerHTML=maps.map((map,index)=>`<button type="button" class="${map.unlocked?'unlocked':'locked'} ${map.code===state.activeMap?'active':''}" data-game-map="${esc(map.code)}" style="--map-color:${esc(map.color)}" title="${esc(map.name)}">${String(index+1).padStart(2,'0')}</button>`).join('');
+    $$('[data-game-map]',box).forEach(button=>button.onclick=()=>{const map=maps.find(item=>item.code===button.dataset.gameMap);if(map?.unlocked){state.game?.enterMap(map.code,true);$$('[data-game-map]',box).forEach(item=>item.classList.toggle('active',item===button));}else toast(`${map?.name||'地图'}仍被迷雾封锁`);});
+  }
+
+  function renderGameMapHeader(map=null) {
+    const active=map||(state.dashboard?.maps||[]).find(item=>item.code===state.activeMap);
+    const mode=state.game?.mode||'world';const stars=state.dashboard?.map_star_summary?.[active?.code]||{};
+    $("#trainingGameShell")?.classList.toggle('region-mode',mode==='region');
+    $("#trainingMapModeLabel").textContent=mode==='world'?'WORLD MAP':'REGION MAP';
+    $("#trainingGameLocation").textContent=mode==='world'?'七域远征世界':active?.name||'算法远征';
+    $("#trainingGameProgress").textContent=mode==='world'?'选择已解锁领域开始远征':`${Number(active?.progress||0)}% 掌握 · ${active?.mastered?'已制霸':'据点修复中'}`;
+    $("#trainingGameStars").textContent=mode==='world'?Object.values(state.dashboard?.map_star_summary||{}).reduce((sum,item)=>sum+Number(item.earned||0),0):Number(stars.earned||0);
+  }
+
+  function openRegionDrawer(region,quest) {
+    if(!region)return;state.selectedRegion=region;
+    const drawer=$("#trainingRegionDrawer");drawer.classList.add('open');drawer.setAttribute('aria-hidden','false');
+    $("#trainingDrawerType").textContent=region.core?'CORE ALGORITHM OUTPOST':'OPTIONAL RELIC';$("#trainingDrawerName").textContent=region.name||'算法据点';
+    const percent=Number(region.percent||0);$("#trainingDrawerPercent").textContent=`${percent}%`;$("#trainingDrawerProgressBar").style.width=`${percent}%`;
+    $("#trainingDrawerExplanation").textContent=region.explanation||region.description||'尚无可靠训练证据。';
+    $("#trainingDrawerEvidence").innerHTML=`<span><b>${Number(region.solved||0)}</b>有效 AC</span><span><b>${Number(region.evidence||0).toFixed(1)} / ${Number(region.evidence_target||0)}</b>广度证据</span><span><b>${Number(region.upper_evidence||0).toFixed(1)} / ${Number(region.upper_target||0)}</b>上段难度</span><span><b>${Number(region.covered_skills||0)} / ${Number(region.required_skills||0)}</b>子技能覆盖</span><span><b>${Number(region.active_days||0)} / ${Number(region.required_days||4)}</b>训练日期</span><span><b>${region.confidence==='high'?'高':region.confidence==='medium'?'中':'低'}</b>判断置信度</span>`;
+    const questBox=$("#trainingDrawerQuest");questBox.classList.toggle('hidden',!quest);
+    if(quest){$("#trainingDrawerQuestSlot").textContent=`今日远征 · ${slotText(quest.slot)}`;$("#trainingDrawerQuestTitle").textContent=quest.title;$("#trainingDrawerQuestReason").textContent=quest.reason;$("#trainingDrawerQuestLink").href=quest.url;$("#trainingDrawerQuestLink").textContent=quest.status==='completed'?'已完成':'前往题目';$("#trainingDrawerQuestSkip").classList.toggle('hidden',quest.status==='completed');$("#trainingDrawerQuestSkip").onclick=async()=>{await api.skipTrainingRecommendation(quest.id);toast('已跳过，七天内不会再次推荐');closeRegionDrawer();await loadRecommendations();state.game?.setData(state.dashboard,state.recommendations);};}
+    $("#trainingSetTargetBtn").classList.toggle('hidden',!state.own);$("#trainingSetTargetBtn").onclick=()=>{persistGameState({selected_map:state.activeMap,selected_region:region.code});toast(`已将「${region.name}」设为当前目标`);};
+  }
+
+  function closeRegionDrawer(){const drawer=$("#trainingRegionDrawer");drawer?.classList.remove('open');drawer?.setAttribute('aria-hidden','true');}
+  async function persistGameState(change){if(!state.own)return;try{const saved=await api.updateTrainingGameState(change);state.dashboard.game_state={...(state.dashboard.game_state||{}),...saved};}catch(error){console.warn('Unable to persist game state',error);}}
+  function syncSoundButton(){const button=$("#trainingMapSound");if(!button||!state.game)return;button.setAttribute('aria-pressed',String(state.game.audioEnabled));button.title=state.game.audioEnabled?'关闭音效':'开启音效';button.innerHTML=`<i data-lucide="${state.game.audioEnabled?'volume-2':'volume-x'}"></i>`;loadGameModule().then(([,lucide])=>lucide.createIcons({icons:lucide.icons}));}
 
   function renderRadar(maps) {
     const map = maps.find(item => item.code === state.activeMap);const regions = (map?.regions || []).filter(region => region.core).slice(0, 6);
