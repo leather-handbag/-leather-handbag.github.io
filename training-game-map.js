@@ -17,6 +17,7 @@ export async function createTrainingGameMap(options) {
 class TrainingGameMap {
   constructor({ host, labelLayer, dashboard, recommendations = [], own = true, activeMap = "plains", onMapChange, onRegionSelect, onGuardianSelect, onLockedMap, onStateChange }) {
     this.host = host;
+    this.shell = host.closest(".game-map-shell");
     this.labelLayer = labelLayer;
     this.dashboard = dashboard;
     this.recommendations = recommendations;
@@ -55,6 +56,7 @@ class TrainingGameMap {
     this.app.ticker.add(ticker => this.tick(ticker.deltaMS));
     this.showWorld(false);
     this.host.classList.add("is-ready");
+    this.shell?.classList.add("is-ready");
   }
 
   setData(dashboard, recommendations = this.recommendations) {
@@ -354,7 +356,7 @@ class TrainingGameMap {
   playSound(type){if(!this.audioEnabled)return;try{this.audioContext??=new AudioContext();const o=this.audioContext.createOscillator(),g=this.audioContext.createGain();const freq={walk:170,node:420,complete:620,unlock:280}[type]||300;o.frequency.setValueAtTime(freq,this.audioContext.currentTime);if(type==="unlock")o.frequency.exponentialRampToValueAtTime(740,this.audioContext.currentTime+.42);g.gain.setValueAtTime(.035,this.audioContext.currentTime);g.gain.exponentialRampToValueAtTime(.001,this.audioContext.currentTime+(type==="unlock"?.55:.16));o.connect(g).connect(this.audioContext.destination);o.start();o.stop(this.audioContext.currentTime+(type==="unlock"?.56:.17));}catch{}}
   async toggleFullscreen(){if(document.fullscreenElement)await document.exitFullscreen();else await this.host.closest(".game-map-shell")?.requestFullscreen?.();}
 
-  destroy(){this.destroyed=true;const c=this.app?.canvas;if(c){c.removeEventListener("pointerdown",this.onPointerDown);c.removeEventListener("pointermove",this.onPointerMove);c.removeEventListener("pointerup",this.onPointerUp);c.removeEventListener("pointercancel",this.onPointerUp);c.removeEventListener("wheel",this.onWheel);}document.removeEventListener("visibilitychange",this.visibilityHandler);this.labelLayer.replaceChildren();this.audioContext?.close?.();this.app?.destroy(true,{children:true,texture:true});}
+  destroy(){this.destroyed=true;this.host?.classList.remove("is-ready");this.shell?.classList.remove("is-ready");const c=this.app?.canvas;if(c){c.removeEventListener("pointerdown",this.onPointerDown);c.removeEventListener("pointermove",this.onPointerMove);c.removeEventListener("pointerup",this.onPointerUp);c.removeEventListener("pointercancel",this.onPointerUp);c.removeEventListener("wheel",this.onWheel);}document.removeEventListener("visibilitychange",this.visibilityHandler);this.labelLayer.replaceChildren();this.audioContext?.close?.();this.app?.destroy(true,{children:true,texture:true});}
 }
 
 function drawLandmark(scene,index,state){

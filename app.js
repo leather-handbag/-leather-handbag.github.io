@@ -1091,11 +1091,12 @@ function renderAuthCaptcha() {
       theme: "light",
       size: "flexible",
       appearance: "always",
-      retry: "auto",
-      "refresh-expired": "auto",
+      retry: "never",
+      "refresh-expired": "manual",
+      "refresh-timeout": "manual",
       callback: token => { authCaptchaToken = token; setAuthCaptchaStatus("安全验证已通过", "ready"); },
-      "expired-callback": () => { authCaptchaToken = ""; setAuthCaptchaStatus("验证已过期，请重新完成", "error"); },
-      "timeout-callback": () => { authCaptchaToken = ""; setAuthCaptchaStatus("验证超时，请重试", "error"); },
+      "expired-callback": () => { authCaptchaToken = ""; setAuthCaptchaStatus("验证已过期，请点击验证框重新完成", "error"); },
+      "timeout-callback": () => { authCaptchaToken = ""; setAuthCaptchaStatus("验证超时，请点击验证框重试", "error"); },
       "error-callback": () => { authCaptchaToken = ""; setAuthCaptchaStatus("安全验证加载失败，请刷新页面", "error"); }
     });
   } catch {
@@ -1240,7 +1241,7 @@ $$('[data-auth-tab]').forEach(button => button.onclick = () => {
   showSignupVerification("");
   authMode = button.dataset.authTab; $$('[data-auth-tab]').forEach(v => v.classList.toggle("active", v === button));
   $("#authConfirmLabel").classList.toggle("hidden", authMode !== "signup"); $("#authPasswordConfirm").required = authMode === "signup";
-  $("#emailAuthSubmit").textContent = authMode === "signup" ? "创建账号" : "登录"; $("#authError").textContent = ""; resetAuthCaptcha();
+  $("#emailAuthSubmit").textContent = authMode === "signup" ? "创建账号" : "登录"; $("#authError").textContent = "";
 });
 $("#emailAuthForm").onsubmit = async e => {
   e.preventDefault(); if (!api.cloud.configured) { $("#authError").textContent = "请先配置 Supabase 环境变量"; return; }
@@ -1249,8 +1250,8 @@ $("#emailAuthForm").onsubmit = async e => {
   if (authMode === "signup" && password !== $("#authPasswordConfirm").value) { $("#authError").textContent = "两次密码不一致"; return; }
   let usedCaptcha = false; $("#emailAuthSubmit").disabled = true;
   try { const captchaToken = requireAuthCaptcha(); usedCaptcha = !!captchaToken; if (authMode === "signup") { const data = await api.emailSignup(email, password, captchaToken); if (data.session) { showSignupVerification(""); toast("注册并登录成功"); } else { showSignupVerification(email); toast("验证码已发送，请查看邮箱"); } } else await api.emailLogin(email, password, captchaToken); }
-  catch (error) { $("#authError").textContent = error.message; }
-  finally { if (usedCaptcha) resetAuthCaptcha(); $("#emailAuthSubmit").disabled = false; }
+  catch (error) { $("#authError").textContent = error.message; if (usedCaptcha) resetAuthCaptcha(); }
+  finally { $("#emailAuthSubmit").disabled = false; }
 };
 $("#signupVerificationForm").onsubmit = async e => {
   e.preventDefault(); const code = $("#signupVerificationCode").value.trim(); $("#signupVerificationError").textContent = "";

@@ -5,6 +5,10 @@ const platformMeta = {
 
 let gameModulePromise;
 const loadGameModule = () => gameModulePromise ||= Promise.all([import("./training-game-map.js"), import("./training-game-icons.js")]);
+const withTimeout = (promise, ms, message) => new Promise((resolve, reject) => {
+  const timer = setTimeout(() => reject(new Error(message)), ms);
+  promise.then(value => { clearTimeout(timer); resolve(value); }, error => { clearTimeout(timer); reject(error); });
+});
 
 export function createTrainingWorld({ api, $, $$, esc, toast, nowText, openModal, avatarHtml }) {
   const state = { dashboard: null, targetId: "", own: false, activeMap: "", heatmap: [], heatmapTarget: "", reports: [], recommendations: [], game: null, selectedRegion: null, initialized: false };
@@ -105,16 +109,18 @@ export function createTrainingWorld({ api, $, $$, esc, toast, nowText, openModal
     if (!shell || !stage || !labels) return;
     if(data.game_map_enabled===false){$("#trainingDashboard").classList.add('game-map-fallback');return;}
     try {
-      const [{ createTrainingGameMap }, { renderTrainingGameIcons }] = await loadGameModule();
+      shell.classList.remove("is-ready");
+      stage.classList.remove("is-ready");
+      const [{ createTrainingGameMap }, { renderTrainingGameIcons }] = await withTimeout(loadGameModule(), 12000, "地图资源加载超时");
       renderTrainingGameIcons();
-      state.game?.destroy?.();state.game = await createTrainingGameMap({
+      state.game?.destroy?.();state.game = await withTimeout(createTrainingGameMap({
         host: stage,labelLayer: labels,dashboard: data,recommendations: state.recommendations,own: state.own,activeMap: state.activeMap,
         onMapChange: (code,map) => { state.activeMap=code;renderGameMapHeader(map);renderRegions(map);renderRadar(data.maps||[]); },
         onRegionSelect: openRegionDrawer,
         onGuardianSelect: openGuardianDrawer,
         onLockedMap: map => toast(`${map?.name||'这张地图'}仍被迷雾封锁。完成前置核心据点，或达到能力直达门槛后永久开启。`),
         onStateChange: persistGameState
-      });
+      }), 12000, "地图引擎初始化超时");
       $("#trainingDashboard").classList.remove("game-map-fallback");$("#trainingDashboard").classList.add("game-map-enabled");
       renderGameMapIndex(data.maps||[]);renderGameMapHeader();syncSoundButton();
       const first=(data.unseen_unlock_events||[]).find(item=>item.map_code!=="plains");
