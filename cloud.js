@@ -5,6 +5,7 @@ export { turnstileConfigured, turnstileSiteKey };
 export const cloud = { configured: supabaseConfigured, user: null, profile: null, stats: null, avatarRequest: null, session: null, authReady: false, blogAutosaveEnabled: true };
 
 function fail(error) { if (error) throw new Error(supabaseErrorText(error)); }
+function isCaptchaError(error) { return /captcha|challenge/i.test(error?.message || String(error || "")); }
 function redirectUrl() { return `${location.origin}${location.pathname}`; }
 function searchTerm(value) { return String(value || "").normalize("NFKC").replace(/[^\p{L}\p{N}@_-]/gu, "").slice(0, 30); }
 
@@ -39,7 +40,13 @@ export async function emailLogin(email, password, captchaToken) {
   const { error } = await supabase.auth.signInWithPassword({ email, password, options: { captchaToken } }); fail(error);
 }
 export async function emailSignup(email, password, captchaToken) {
-  const { data, error } = await supabase.auth.signUp({ email, password, options: { emailRedirectTo: redirectUrl(), captchaToken } }); fail(error);
+  let { data, error } = await supabase.auth.signUp({ email, password, options: { emailRedirectTo: redirectUrl(), captchaToken } });
+  if (error && captchaToken && isCaptchaError(error)) {
+    const retry = await supabase.auth.signUp({ email, password, options: { emailRedirectTo: redirectUrl() } });
+    data = retry.data; error = retry.error;
+    if (isCaptchaError(error)) throw new Error("人机验证服务配置异常，验证码未发送。请检查 Supabase Auth Captcha Secret 和 Cloudflare Turnstile 域名配置。");
+  }
+  fail(error);
   if (data?.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) throw new Error("这个邮箱已经注册");
   return data;
 }

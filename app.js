@@ -1254,7 +1254,7 @@ $("#emailAuthForm").onsubmit = async e => {
   if (authMode === "signup" && password !== $("#authPasswordConfirm").value) { $("#authError").textContent = "两次密码不一致"; return; }
   let usedCaptcha = false; $("#emailAuthSubmit").disabled = true;
   try { const captchaToken = requireAuthCaptcha(); usedCaptcha = !!captchaToken; if (usedCaptcha) setAuthCaptchaStatus("安全验证已通过，正在提交……", "ready"); if (authMode === "signup") { const data = await api.emailSignup(email, password, captchaToken); if (data.session) { showSignupVerification(""); toast("注册并登录成功"); } else { showSignupVerification(email); toast("验证码已发送，请查看邮箱"); } } else await api.emailLogin(email, password, captchaToken); }
-  catch (error) { $("#authError").textContent = error.message; if (usedCaptcha) consumeAuthCaptcha(authMode === "signup" ? "创建账号没有完成，请点击重新验证后再试" : "登录没有完成，请点击重新验证后再试"); }
+  catch (error) { $("#authError").textContent = error.message; if (usedCaptcha) consumeAuthCaptcha(`${error.message}。${authMode === "signup" ? "创建账号没有完成" : "登录没有完成"}，请点击重新验证后再试`); }
   finally { $("#emailAuthSubmit").disabled = false; }
 };
 $("#signupVerificationForm").onsubmit = async e => {
